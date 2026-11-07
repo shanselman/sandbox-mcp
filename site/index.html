@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>sandbox-mcp: give your AI agent a brand-new Windows PC, then throw it away</title>
-  <meta name="description" content="Use the standalone sbx CLI or optional MCP adapter to test Windows apps in a real, disposable Windows 11 Sandbox.">
+  <meta name="description" content="An MCP server and standalone CLI that let your AI agent test apps on a real, disposable Windows 11 PC.">
   <link rel="canonical" href="https://shanselman.github.io/sandbox-mcp/">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <meta name="theme-color" content="#0b1018">
   <meta property="og:type" content="website">
   <meta property="og:title" content="sandbox-mcp: give your AI agent a brand-new Windows PC, then throw it away">
-  <meta property="og:description" content="A real, disposable Windows 11: boot it, deploy your app, drive the controls, catch the crash, keep the evidence, delete the PC.">
+  <meta property="og:description" content="An MCP server and standalone CLI that let your AI agent test apps on a real, disposable Windows 11 PC.">
   <meta property="og:url" content="https://shanselman.github.io/sandbox-mcp/">
   <meta property="og:image" content="https://shanselman.github.io/sandbox-mcp/assets/og.png">
   <meta name="twitter:card" content="summary_large_image">
@@ -26,9 +26,9 @@
     <a class="brand" href="#top"><img src="assets/favicon.svg" alt="" width="28" height="28"> sandbox-mcp</a>
     <nav aria-label="Main">
       <a href="#what">What it does</a>
-      <a href="#compatibility">Compatibility</a>
-      <a href="#why">Why</a>
-      <a href="#how">How it works</a>
+      <a href="#mcp">MCP</a>
+      <a href="#cli">CLI</a>
+      <a href="#sandbox">Windows Sandbox</a>
       <a href="https://github.com/shanselman/sandbox-mcp">GitHub</a>
       <a class="btn btn-small" href="#get">Get it</a>
     </nav>
@@ -38,79 +38,77 @@
 <main id="main">
 <section class="hero" id="top">
   <div class="wrap">
-    <p class="eyebrow">Give your AI agent a brand-new Windows PC</p>
-    <h1>&ldquo;Works on my machine&rdquo; <span>isn&rsquo;t a test.</span></h1>
-    <p class="lede">A real, disposable Windows 11: boot it, deploy your app, drive the controls, catch the crash, keep the evidence, delete the PC. Run it directly with <code>sbx</code>; the optional MCP adapter adds discoverable tools and inline images. Both use the same engine.</p>
+    <p class="eyebrow">An MCP server for Windows Sandbox</p>
+    <h1>Give your AI agent a brand-new Windows PC. <span>Then throw it away.</span></h1>
+    <p class="lede">Your agent can write the app, but it can&rsquo;t tell you if it runs on a PC that isn&rsquo;t yours. With sandbox-mcp it can boot a clean Windows 11, run your build, click around and see what happened. Then the machine is deleted.</p>
     <div class="cta">
       <a class="btn" href="#get">Get sandbox-mcp</a>
-      <a class="btn btn-ghost" href="#what">See what it finds</a>
+      <a class="btn btn-ghost" href="#mcp">How it works</a>
     </div>
 
-    <div class="stage" id="stage">
-      <div class="term">
-        <div class="term-bar"><i></i><i></i><i></i><span>PowerShell</span><button class="replay" type="button" id="replay" hidden>Replay</button></div>
-<pre class="term-body" id="term" tabindex="0"><code><span class="cmd l">&gt; sbx run .\NativeProof.exe --network off</span>
-<span class="l"> </span>
-<span class="l bad"><b>FAIL</b>  NativeProof.exe on a fresh Windows Sandbox (29.8s)</span>
-<span class="l dim">  why      exited with code -1073741515; Missing dependency: VC++ redistributable.</span>
-<span class="l"> </span>
-<span class="cmd l"># The customer's PC has no VC++. Opt in, on another fresh guest:</span>
-<span class="cmd l">&gt; sbx run .\NativeProof.exe --network off --provision auto</span>
-<span class="l"> </span>
-<span class="l pass"><b>PASS</b>  NativeProof.exe on a fresh Windows Sandbox (30.9s)</span>
-<span class="l dim">  baseline PROVISIONED (not a clean-machine pass): VC++ redistributable  x64</span>
-<span class="l dim">  process  exited with code 0</span></code></pre>
+    <figure class="demo" id="demo" aria-label="Illustration: an agent uses MCP tools to boot a Windows Sandbox, test an app and delete the sandbox">
+      <div class="demo-chat">
+        <div class="pane-bar"><span>Your AI agent</span><button class="replay" type="button" id="demo-toggle" hidden>Pause</button></div>
+        <div class="log" id="demo-log" tabindex="0" role="region" aria-label="Agent session">
+          <p class="bubble bubble-you" id="demo-prompt">Try HelloSandbox on a clean PC. Type my name, click Greet and show me what happens.</p>
+          <ol class="tools">
+            <li class="call" data-state="boot" data-ms="2300" data-status="Booting a clean Windows 11"><div class="call-head"><code>sandbox_start</code><code class="args">{ "network": "off" }</code></div><p>Clean Windows 11 ready</p></li>
+            <li class="call" data-state="copy" data-ms="1300" data-status="Copying your build in"><div class="call-head"><code>sandbox_copy_in</code><code class="args">{ "hostPath": "D:\\HelloSandbox" }</code></div><p>Build copied in</p></li>
+            <li class="call" data-state="app" data-ms="1300" data-status="App running on the sandbox desktop"><div class="call-head"><code>sandbox_launch</code><code class="args">{ "path": "C:\\apps\\HelloSandbox\\HelloSandbox.exe" }</code></div><p>Running as pid 4812</p></li>
+            <li class="call" data-state="tree" data-ms="1700" data-status="Reading the app's controls"><div class="call-head"><code>sandbox_ui_tree</code><code class="args">{ "pid": 4812 }</code></div><pre class="tree"><code>Edit #NameBox = "" {setvalue}
+Button "Greet" #GreetButton {invoke}</code></pre></li>
+            <li class="call" data-state="typed" data-ms="1300" data-status="Typing the name"><div class="call-head"><code>sandbox_ui_action</code><code class="args">{ "automationId": "NameBox", "action": "setvalue", "value": "Scott" }</code></div></li>
+            <li class="call" data-state="greeted" data-ms="1400" data-status="Clicking Greet"><div class="call-head"><code>sandbox_ui_action</code><code class="args">{ "automationId": "GreetButton" }</code></div></li>
+            <li class="call" data-state="shot" data-ms="1500" data-status="Screenshot sent back to the agent"><div class="call-head"><code>sandbox_screenshot</code><code class="args">{ "pid": 4812 }</code></div><div class="thumb" role="img" aria-label="Drawn thumbnail of the Hello Sandbox window showing Hello, Scott!"><b>Hello Sandbox</b><i>Scott</i><i>Hello, Scott!</i><u>Greet</u></div></li>
+            <li class="call" data-state="gone" data-ms="1800" data-status="Machine deleted"><div class="call-head"><code>sandbox_stop</code><code class="args">{ }</code></div><p>Sandbox deleted, screenshots kept</p></li>
+          </ol>
+          <p class="bubble bubble-agent" id="demo-answer">It works on a clean PC. I typed Scott, clicked Greet and it said &ldquo;Hello, Scott!&rdquo;. The sandbox is gone.</p>
+        </div>
       </div>
 
-    </div>
+      <div class="wire" id="demo-wire" aria-hidden="true"><span>MCP</span></div>
 
-    <dl class="facts">
-      <div><dt>~15 s</dt><dd>to boot a clean Windows</dd></div>
-      <div><dt>0</dt><dd>images to build or download</dd></div>
-      <div><dt data-tool-count>27</dt><dd>optional MCP tools; full <code>sbx</code> CLI</dd></div>
-      <div><dt>Free</dt><dd>with Windows Pro, Enterprise or Education</dd></div>
-    </dl>
-  </div>
-</section>
+      <div class="sbx s-desk s-app s-typed s-greet" id="demo-sbx">
+        <div class="pane-bar"><span>Windows Sandbox</span><span class="pill">Network off</span></div>
+        <div class="desktop" aria-hidden="true">
+          <div class="boot"><i class="spinner"></i><span>Booting a clean Windows 11</span></div>
+          <div class="file-in"><b>HelloSandbox.exe</b><i></i></div>
+          <div class="app">
+            <div class="app-title"><span>Hello Sandbox</span><em>&times;</em></div>
+            <div class="app-field ctl" data-tag="#NameBox"><span class="app-typed">Scott</span></div>
+            <div class="app-label ctl" data-tag="#Output"><span class="say-before">Who are you?</span><span class="say-after">Hello, Scott!</span></div>
+            <div class="app-button ctl" data-tag="#GreetButton">Greet</div>
+          </div>
+          <div class="flash"></div>
+          <div class="gone"><strong>Sandbox deleted</strong><span>Screenshots stay on your PC</span></div>
+          <div class="taskbar"><i></i><i></i><i></i></div>
+        </div>
+        <p class="sbx-status" id="demo-status" aria-live="off">App running on the sandbox desktop</p>
+      </div>
 
-<section class="paper" id="problem">
-  <div class="wrap split">
-    <div>
-      <p class="eyebrow">The problem</p>
-      <h2>Your PC is the worst place to test your app.</h2>
-      <p>It has every runtime, SDK, redistributable, font, registry key and PATH entry you ever installed. Your users&rsquo; PCs don&rsquo;t. So the missing VC++ runtime you forgot to bundle never shows up until a customer finds it.</p>
-      <p>Windows Sandbox is the perfect brand-new customer PC: pristine, and deleted when it closes. <strong>The shared sandbox-mcp engine adds what it&rsquo;s missing:</strong> app deployment, UI Automation, clean-machine checks and test evidence that outlives the machine.</p>
-    </div>
-    <div class="versus">
-      <div class="vs-col">
-        <h3>Your dev box</h3>
-        <ul class="strike">
-          <li>Every .NET SDK since 2019</li>
-          <li>VC++ redistributables</li>
-          <li>WebView2 runtime</li>
-          <li>Years of PATH entries</li>
-          <li>That one registry key</li>
-        </ul>
-      </div>
-      <div class="vs-col vs-clean">
-        <h3>A fresh sandbox</h3>
-        <ul>
-          <li>Clean Windows 11</li>
-          <li>Windows PowerShell 5.1</li>
-          <li>.NET Framework 4.8</li>
-          <li>No dev tools or winget</li>
-          <li>No Store apps, not even Notepad</li>
-        </ul>
-      </div>
-    </div>
+      <figcaption>An illustration, sped up, using the included <a href="https://github.com/shanselman/sandbox-mcp/tree/main/samples/HelloSandbox">HelloSandbox sample</a>. The tools are real. The desktop is drawn.</figcaption>
+      <details class="demo-transcript">
+        <summary>Read the full demo transcript</summary>
+        <ol>
+          <li><code>sandbox_start</code>: clean Windows 11 ready, network off.</li>
+          <li><code>sandbox_copy_in</code>: HelloSandbox build copied in.</li>
+          <li><code>sandbox_launch</code>: HelloSandbox is running.</li>
+          <li><code>sandbox_ui_tree</code>: found the NameBox and Greet button.</li>
+          <li><code>sandbox_ui_action</code>: entered Scott, then clicked Greet.</li>
+          <li><code>sandbox_screenshot</code>: shows &ldquo;Hello, Scott!&rdquo;.</li>
+          <li><code>sandbox_stop</code>: sandbox deleted; screenshots kept.</li>
+        </ol>
+        <p>The tools are real. The desktop shown above is drawn.</p>
+      </details>
+    </figure>
   </div>
 </section>
 
 <section class="paper paper-alt" id="what">
   <div class="wrap">
     <p class="eyebrow">What it does</p>
-    <h2>Three questions, one command each.</h2>
-    <p class="section-lede">Every run keeps its screenshots, a markdown report and an audit log on your PC after the machine is gone.</p>
+    <h2>Find out what happens on a PC that isn&rsquo;t yours.</h2>
+    <p class="section-lede">Your machine has every runtime and SDK you ever installed. Your users&rsquo; machines don&rsquo;t.</p>
 
     <div class="tabs" data-tabs>
       <div class="tablist" role="tablist" aria-label="Things sandbox-mcp can answer">
@@ -121,49 +119,35 @@
 
       <div class="panel" role="tabpanel" id="p-run" aria-labelledby="t-run">
         <div class="panel-copy">
-          <h3>Clean-machine smoke tests</h3>
-          <p>Does it even start without the runtime you forgot to bundle? You get a pass or fail, a screenshot and the crash events. Missing runtimes are findings: nothing gets installed unless you ask, and a provisioned run is labeled as not clean.</p>
-          <ul class="ticks">
-            <li>Diagnose dependencies with <code>sbx deps</code>, without running anything</li>
-            <li>Drive WinForms, WPF, Win32 and WinUI apps by control name, not pixels</li>
-            <li>Test EXEs and MSIX packages, with exit codes for CI and scripts</li>
-          </ul>
+          <h3>Test your build <code class="tool-tag">sandbox_run</code></h3>
+          <p>Starting isn&rsquo;t proof. The included test sets a name, clicks Greet, waits for the exact label and compares a saved file. A missing runtime stays a failure.</p>
         </div>
-<pre class="out" tabindex="0"><code><span class="cmd"># Scan the app on your PC. Boots nothing, runs nothing</span>
-&gt; sbx deps app.exe
+<pre class="out" tabindex="0"><code><span class="cmd">&gt; sbx run .\samples\HelloSandbox\bin --test .\samples\HelloSandbox\test.ps1</span>
 
-<span class="cmd"># Passes</span>
-&gt; sbx run .\samples\HelloSandbox\bin --test .\samples\HelloSandbox\test.ps1
+PASS  HelloSandbox.exe on a fresh Windows Sandbox
+  test     test.ps1 passed
 
-<span class="cmd"># Fails, and shows the crash</span>
-&gt; sbx run .\samples\HelloSandbox\bin --args --crash
-
-<span class="cmd"># test.ps1 runs inside the sandbox and drives the app by control name</span>
-$app = [int]$env:SBX_APP_PID
-Invoke-SbxUi -ProcessId $app -AutomationId NameBox -Action setvalue -Value 'Sandbox'
-Invoke-SbxUi -ProcessId $app -Name Greet -Action click
-Wait-SbxUi   -ProcessId $app -Name 'Hello, Sandbox!' -TimeoutSec 5 | Out-Null</code></pre>
+<span class="cmd">&gt; sbx run .\NativeProof.exe --network off</span>
+<span class="bad"><b>FAIL</b></span>  NativeProof.exe on a fresh Windows Sandbox (29.8s)
+  why      exited with code -1073741515; Missing dependency: VC++ redistributable.</code></pre>
+        <details class="test-script">
+          <summary>See the actual UI assertions from <code>test.ps1</code></summary>
+<pre tabindex="0"><code>$app = @{ ProcessId = $env:SBX_APP_PID }
+Invoke-SbxUi @app -AutomationId NameBox -Action setvalue -Value 'Sandbox Tester' | Out-Null
+Invoke-SbxUi @app -Name Greet | Out-Null
+$label = (Wait-SbxUi @app -AutomationId Output -Name 'Hello, Sandbox Tester!' -TimeoutSec 5).name
+$file = Join-Path $env:SBX_APP_DIR 'greeting.txt'
+if ((Get-Content $file) -ne $label) { throw 'greeting.txt does not match the label' }
+'PASS'</code></pre>
+        </details>
       </div>
 
       <div class="panel" role="tabpanel" id="p-install" aria-labelledby="t-install" hidden>
         <div class="panel-copy">
-          <h3>Installer and uninstaller testing</h3>
-          <p>Installers only ever run on clean machines, so they&rsquo;re the part you test least. This one snapshots, installs, snapshots, uninstalls, snapshots, and diffs them all.</p>
-          <ul class="ticks">
-            <li>Every file, registry key, service, scheduled task and autorun it added</li>
-            <li>Everything the uninstaller forgot</li>
-            <li>A hung &ldquo;silent&rdquo; install gets screenshotted instead of stalling your CI</li>
-          </ul>
+          <h3>Test your installer <code class="tool-tag">sandbox_install_test</code></h3>
+          <p>It installs, uninstalls and shows you what the uninstaller forgot. A &ldquo;silent&rdquo; install that hangs comes back with a screenshot of the dialog.</p>
         </div>
-<pre class="out" tabindex="0"><code><span class="cmd">&gt; sbx install-test .\7z2501-x64.msi --offline</span>
-
-<span class="good"><b>PASS</b></span>  7z2501-x64.msi on a fresh Windows Sandbox (117.5s)
-  install    exit 0 in 2.5s
-  added      7-Zip 25.01 (x64 edition); 111 files, 18 registry keys, 0 services, 0 autorun/env values
-  uninstall  7-Zip 25.01 (x64 edition): exit 0 in 2.3s
-  leftovers  none, clean uninstall
-
-<span class="cmd">&gt; sbx install-test .\samples\LeakyApp\install.ps1</span>
+<pre class="out" tabindex="0"><code><span class="cmd">&gt; sbx install-test .\samples\LeakyApp\install.ps1</span>
 
 ## Left behind after uninstall
 <span class="bad">Services:</span>  added service LeakyUpdater "Leaky App Updater", automatic: "C:\Program Files\LeakyApp\updater.exe"
@@ -175,31 +159,160 @@ Wait-SbxUi   -ProcessId $app -Name 'Hello, Sandbox!' -TimeoutSec 5 | Out-Null</c
 
       <div class="panel" role="tabpanel" id="p-detonate" aria-labelledby="t-detonate" hidden>
         <div class="panel-copy">
-          <h3>See what a file you don&rsquo;t trust does</h3>
-          <p>An <code>invoice.js</code>, a &ldquo;driver update&rdquo;, a script from a forum. It runs with no network adapter and Windows auditing on, then the whole machine is deleted.</p>
-          <ul class="ticks">
-            <li>Every process it started, with command lines</li>
-            <li>Names it looked up and addresses it tried</li>
-            <li>Autoruns, scheduled tasks, services and files it planted</li>
-          </ul>
-          <p class="note">Findings are heuristics, not a verdict. It&rsquo;s a quick first look on your own PC, not a malware lab: a file that detects a sandbox can just behave nicely.</p>
+          <h3>Open a file you don&rsquo;t trust <code class="tool-tag">sandbox_detonate</code></h3>
+          <p>Someone sent you <code>invoice.js</code>. Run it with no network and see what it did. Something that knows it&rsquo;s in a sandbox can just behave nicely, so treat this as a first look.</p>
         </div>
 <pre class="out" tabindex="0"><code><span class="cmd">&gt; sbx detonate .\samples\Suspicious\suspicious.ps1 --network firewall</span>
 
 suspicious.ps1: 3 red flag(s) (watched 40s, network firewall)
-  findings   <i class="dot red"></i>starts itself with Windows: added HKCU\Software\Microsoft\Windows\CurrentVersion\Run\ContosoUpdater =
-                powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\Users\...\ContosoUpdater\updater.ps1"
              <i class="dot red"></i>created a scheduled task: ContosoUpdate
              <i class="dot red"></i>put something in a Startup folder: C:\Users\...\Start Menu\Programs\Startup\contoso.cmd
-             <i class="dot amber"></i>wrote 2 runnable file(s): C:\Users\...\ContosoUpdater\updater.ps1, ...\Startup\contoso.cmd
-             <i class="dot amber"></i>ran built-in Windows tools that malware often uses: schtasks.exe, whoami.exe, ipconfig.exe, net.exe, net1.exe
+             <i class="dot red"></i>starts itself with Windows: HKCU\Software\Microsoft\Windows\CurrentVersion\Run\ContosoUpdater
              <i class="dot amber"></i>looked up 1 internet name(s): c2.contoso-updates.example
              <i class="dot amber"></i>tried to connect to 2 address(es): 198.51.100.7:4444, 203.0.113.10:80
-  processes  7 (powershell.exe → conhost.exe → schtasks.exe → whoami.exe → ipconfig.exe …)
-  network    1 name lookup(s), 2 connection attempt(s)
-  changed    4 files added, 0 changed, 2 registry keys, 1 autorun/env values, 0 services</code></pre>
+             …</code></pre>
       </div>
     </div>
+  </div>
+</section>
+
+<section class="ink" id="mcp">
+  <div class="wrap">
+    <p class="eyebrow">The MCP server</p>
+    <h2>Add it to your agent, and your agent can use a Windows PC.</h2>
+    <p class="section-lede">It works with GitHub Copilot, Claude, Cursor, VS Code and anything else that speaks MCP. The agent finds the <a href="https://github.com/shanselman/sandbox-mcp#mcp-tools"><span data-tool-count>27</span> tools</a> on its own, and screenshots come back inline so it can see what it did.</p>
+
+    <figure class="arch" aria-label="On your PC, an AI agent calls the MCP adapter and you or your scripts call the sbx CLI. Both use one engine, which keeps a run folder and controls a guest agent inside Windows Sandbox. The guest agent drives your app.">
+      <div class="zone zone-host">
+        <p class="zone-name">Your PC</p>
+        <div class="arch-host">
+          <div class="lanes">
+            <div class="lane">
+              <div class="node node-sky"><strong>Your agent</strong></div>
+              <div class="link"><span>MCP</span></div>
+              <div class="node node-sky"><strong>MCP adapter</strong></div>
+            </div>
+            <div class="lane">
+              <div class="node"><strong>You, or a script</strong></div>
+              <div class="link"><span>shell</span></div>
+              <div class="node"><strong><code>sbx</code> CLI</strong></div>
+            </div>
+          </div>
+          <div class="link link-short"></div>
+          <div class="engine-col">
+            <div class="node node-engine"><strong>The engine</strong></div>
+            <div class="node node-evidence"><strong>Run folder</strong><span>Screenshots and logs you keep</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="link link-bridge"><span>encrypted</span></div>
+      <div class="zone zone-guest">
+        <p class="zone-name">Windows Sandbox</p>
+        <div class="node node-go"><strong>Guest agent</strong></div>
+        <div class="link link-down"></div>
+        <div class="node node-go"><strong>Your app</strong></div>
+      </div>
+    </figure>
+  </div>
+</section>
+
+<section class="paper" id="cli">
+  <div class="wrap">
+    <p class="eyebrow">The CLI</p>
+    <h2>Rather use a terminal? Use <code class="h-code">sbx</code>.</h2>
+    <p class="section-lede">You don&rsquo;t have to use MCP. The server is an optional MCP adapter, and <code>sbx</code> uses the same engine, so all of this works from a shell, a script or an agent that can run commands.</p>
+
+<pre class="out out-cli" tabindex="0"><code><span class="cmd"># One shot</span>
+sbx run .\MyApp.exe --network off
+sbx install-test setup.msi
+sbx detonate invoice.js
+
+<span class="cmd"># Keep one around while you work</span>
+sbx start --network off
+sbx deploy .\bin C:\apps\MyApp --launch MyApp.exe --restart
+sbx ui click --name Save
+sbx shot
+sbx stop</code></pre>
+    <p class="section-foot"><code>sbx</code> here is sandbox-mcp&rsquo;s Windows Sandbox CLI. Docker also has its own <code>sbx</code> command for <a href="https://docs.docker.com/reference/cli/sbx/">Docker Sandboxes</a>.</p>
+  </div>
+</section>
+
+<section class="ink" id="get">
+  <div class="wrap">
+    <p class="eyebrow">Get it</p>
+    <h2>Set it up.</h2>
+    <p class="section-lede">You need Windows 11 24H2 or later on Pro, Enterprise or Education. Turn on Windows Sandbox in an <strong>admin</strong> PowerShell, restart, then open it from the Start menu once.</p>
+    <div class="code code-enable"><pre tabindex="0"><code>Enable-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClientVM -All</code></pre><button class="copy" type="button">Copy</button></div>
+
+    <div class="tabs tabs-ink" data-tabs>
+      <div class="tablist" role="tablist" aria-label="Ways to install sandbox-mcp">
+        <button role="tab" id="t-setup" aria-controls="p-setup" aria-selected="true" type="button">Ask your agent</button>
+        <button role="tab" id="t-plugin" aria-controls="p-plugin" aria-selected="false" type="button">Agent plugin</button>
+        <button role="tab" id="t-zip" aria-controls="p-zip" aria-selected="false" type="button">Portable ZIP</button>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-setup" aria-labelledby="t-setup">
+        <div class="panel-copy">
+          <h3>Let your agent set it up.</h3>
+          <p>It checks your PC and verifies the download, and it asks before admin changes or a restart. No Node.js install needed.</p>
+          <p><a href="https://github.com/shanselman/sandbox-mcp/blob/main/docs/agent-setup.md">Setup guide</a></p>
+        </div>
+        <div class="panel-code">
+          <p class="code-label">Give this to your agent</p>
+          <div class="code"><pre tabindex="0"><code>Set up the sandbox-mcp CLI by following:
+https://raw.githubusercontent.com/shanselman/sandbox-mcp/main/docs/agent-setup.md
+Install the latest verified release. The CLI must work without MCP; configure the optional MCP adapter only if my agent needs it. Ask before admin changes or a restart.</code></pre><button class="copy" type="button">Copy</button></div>
+        </div>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-plugin" aria-labelledby="t-plugin" hidden>
+        <div class="panel-copy">
+          <h3>MCP and five skills, for your agent.</h3>
+          <p>Needs Node.js 20 or later. The standalone CLI does not require this plugin.</p>
+          <p><a href="https://github.com/shanselman/sandbox-mcp/blob/main/docs/agent-plugin.md">Plugin guide</a>, including VS Code</p>
+        </div>
+        <div class="panel-code">
+          <p class="code-label">GitHub Copilot CLI</p>
+          <div class="code"><pre tabindex="0"><code>copilot plugin marketplace add shanselman/sandbox-mcp
+copilot plugin install sandbox-mcp@sandbox-mcp</code></pre><button class="copy" type="button">Copy</button></div>
+        </div>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-zip" aria-labelledby="t-zip" hidden>
+        <div class="panel-copy">
+          <h3>For the CLI. No Node.js install, MCP setup or PATH changes.</h3>
+          <p>Everything&rsquo;s in the ZIP, including its own Node.js. <a href="https://github.com/shanselman/sandbox-mcp#install-from-source">Install from source</a> if you&rsquo;d rather.</p>
+          <p><a class="btn" href="https://github.com/shanselman/sandbox-mcp/releases/latest">Download the latest release</a></p>
+        </div>
+        <div class="panel-code">
+          <p class="code-label">In the extracted folder</p>
+          <div class="code"><pre tabindex="0"><code>.\sbx.cmd doctor
+.\sbx.cmd run C:\Windows\System32\charmap.exe --open</code></pre><button class="copy" type="button">Copy</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="paper paper-alt" id="sandbox">
+  <div class="wrap">
+    <p class="eyebrow">Windows Sandbox</p>
+    <h2>You probably already own it, and it&rsquo;s probably switched off.</h2>
+    <p class="section-lede">Windows Sandbox comes with Windows Pro, Enterprise and Education. It&rsquo;s a whole Windows desktop on its own kernel that boots clean in about 15 seconds and is thrown away when it closes. Set <code>network</code> to <code>off</code> and it doesn&rsquo;t even get a network adapter.</p>
+
+    <figure class="boundary" aria-label="Three shared folders and a control channel cross between your PC and the sandbox. Clipboard, printer, microphone, camera and the rest of your disk do not.">
+      <div class="side"><p class="zone-name">Your PC</p><strong>Run folder</strong><span>The sandbox can&rsquo;t see the rest of your disk</span></div>
+      <ul class="pipes">
+        <li><span class="dir">&rarr;</span><code>agent</code><em>read-only</em></li>
+        <li><span class="dir">&rarr;</span><code>in</code><em>read-only, files you copy in</em></li>
+        <li><span class="dir dir-back">&larr;</span><code>out</code><em>writable, so don&rsquo;t trust what comes back</em></li>
+        <li><span class="dir">&harr;</span><code>control</code><em>encrypted, tied to one boot</em></li>
+        <li class="pipe-off"><span class="dir">&times;</span>Clipboard, printer, mic, camera<em>off</em></li>
+      </ul>
+      <div class="side side-guest"><p class="zone-name">Windows Sandbox</p><strong>Its own kernel</strong><span>Isolated by the Microsoft hypervisor</span></div>
+    </figure>
+
+    <p class="note note-wide">This is strong isolation but not a guarantee, so use a dedicated machine for real malware analysis. <a href="https://github.com/shanselman/sandbox-mcp#security-notes">Security notes</a>.</p>
   </div>
 </section>
 
@@ -225,206 +338,18 @@ suspicious.ps1: 3 red flag(s) (watched 40s, network firewall)
   </div>
 </section>
 
-<section class="ink" id="agents">
+<section class="paper paper-alt" id="limits">
   <div class="wrap split">
     <div>
-      <p class="eyebrow">For your agent</p>
-      <h2>Let your agent close the loop, on a PC it can&rsquo;t hurt.</h2>
-      <p>Build it, test it on a clean machine, look at the screenshot, fix it, repeat, without the agent touching your real desktop. Works with GitHub Copilot, Claude, Cursor, VS Code and other MCP clients.</p>
-      <p>Agents read the app the way a screen reader does, so finding a button costs one line of text instead of a screenshot.</p>
-      <p><strong>Fast inner loop:</strong> keep one sandbox warm and redeploy only the files that changed, with every hash verified. When you&rsquo;re done, a fresh run gives you the clean-machine answer.</p>
-      <p><strong>Evidence that survives:</strong> record the desktop to a self-contained HTML flipbook, plus MP4 if you have ffmpeg, even if the guest crashes.</p>
-      <p>The CLI and the MCP server share state, so you can <code>sbx start</code>, let an agent poke at the app, then <code>sbx stop</code>.</p>
-    </div>
-    <div class="chat">
-      <p class="bubble">Build the app, run it in a fresh Windows Sandbox, type my name in the box, click Greet and show me a screenshot.</p>
-      <ol class="calls">
-        <li><code>sandbox_deps</code><span>What does it need? Nothing boots yet</span></li>
-        <li><code>sandbox_start</code><span>Clean Windows, desktop ready</span></li>
-        <li><code>sandbox_deploy</code><span>Changed files only, hashes verified</span></li>
-        <li><code>sandbox_ui_tree</code><span><code>Button "Save" #SaveButton {invoke}</code></span></li>
-        <li><code>sandbox_ui_action</code><span>Set text, click, toggle, select</span></li>
-        <li><code>sandbox_screenshot</code><span>Returned inline to the agent</span></li>
-        <li><code>sandbox_stop</code><span>Machine destroyed, artifacts kept</span></li>
-      </ol>
-    </div>
-  </div>
-</section>
-
-<section class="paper" id="why">
-  <div class="wrap">
-    <p class="eyebrow">Why this and not a VM</p>
-    <h2>The fastest honest answer to &ldquo;does it work on a clean PC?&rdquo;</h2>
-    <div class="table-scroll" tabindex="0" role="region" aria-label="Comparison of sandbox-mcp with VMs, containers and cloud dev VMs">
-      <table>
-        <thead>
-          <tr><th scope="col"></th><th scope="col" class="us">sandbox-mcp</th><th scope="col">Hyper-V / VMware VM</th><th scope="col">Windows containers</th><th scope="col">Cloud dev VMs</th></tr>
-        </thead>
-        <tbody>
-          <tr><th scope="row">Real Windows desktop and GUI</th><td class="us yes">Yes</td><td class="yes">Yes</td><td class="no">No desktop</td><td>Linux mostly; yes on Dev Box</td></tr>
-          <tr><th scope="row">Clean state every run</th><td class="us yes">Always, by design</td><td>Snapshots to manage</td><td class="yes">Yes</td><td class="no">Persistent</td></tr>
-          <tr><th scope="row">Startup</th><td class="us yes">~15 s</td><td>Minutes</td><td class="yes">Seconds</td><td>Minutes</td></tr>
-          <tr><th scope="row">Images to build or download</th><td class="us yes">None</td><td>A 20+ GB VHD</td><td>Multi-GB base images</td><td>None, but it&rsquo;s someone else&rsquo;s computer</td></tr>
-          <tr><th scope="row">Cost</th><td class="us yes">Free with Windows Pro or Enterprise</td><td>Free-ish, plus disk</td><td class="yes">Free</td><td>Paid</td></tr>
-          <tr><th scope="row">Runs offline and local</th><td class="us yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td></tr>
-          <tr><th scope="row">Parallel instances</th><td class="us no">One at a time</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
-          <tr><th scope="row">Persistent environment</th><td class="us no">No</td><td class="yes">Yes</td><td>Via volumes</td><td class="yes">Yes</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="section-foot">Need many machines, persistence or Linux? Use a VM or a cloud box. That&rsquo;s not what this is for.</p>
-  </div>
-</section>
-
-<section class="paper paper-alt" id="how">
-  <div class="wrap">
-    <p class="eyebrow">How it works</p>
-    <h2>Real isolation, with nothing to install inside.</h2>
-    <div class="how-grid">
-      <ol class="steps">
-        <li><strong>A hardened sandbox starts.</strong> The host creates a run folder and calls <code>wsb start</code>, with clipboard, printer, mic and camera redirection off.</li>
-        <li><strong>A small agent goes in.</strong> It runs in the interactive session, because it needs a desktop for windows and screenshots.</li>
-        <li><strong>It does what <code>wsb exec</code> can&rsquo;t.</strong> Real command output, file copy, screenshots, mouse, keyboard, event logs and native UI Automation.</li>
-        <li><strong>The machine is destroyed.</strong> <code>wsb stop</code> deletes the VM. The run folder with your evidence stays on your PC.</li>
-      </ol>
-      <div class="safety">
-        <h3>What keeps your PC out of it</h3>
-        <ul class="ticks">
-          <li>A separate Hyper-V-isolated kernel for each sandbox</li>
-          <li>Exactly three shared folders. Nothing else on your disk is visible</li>
-          <li>A random per-sandbox key, with control traffic encrypted, authenticated and tied to one boot</li>
-          <li><code>network: off</code> means no network adapter at all</li>
-          <li>An audit log of every operation</li>
-          <li>Shut down after 30 idle minutes, and when the MCP client that started it disconnects</li>
-        </ul>
-        <p class="note">Strong isolation isn&rsquo;t a guarantee: a hypervisor or Windows Sandbox escape would be a zero-day. For real malware analysis, use a dedicated, disposable machine.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="ink" id="get">
-  <div class="wrap">
-    <p class="eyebrow">Get it</p>
-    <h2>Running in three steps.</h2>
-
-    <ol class="setup">
-      <li>
-        <h3>Check your PC</h3>
-        <p>You need Windows 11 24H2 or later on Pro, Enterprise or Education, with virtualization on and at least 4 GB of RAM. Home and Server editions can&rsquo;t run Windows Sandbox.</p>
-      </li>
-      <li>
-        <h3>Turn on Windows Sandbox</h3>
-        <p>It comes with Windows and is probably switched off. In an <strong>admin</strong> PowerShell, run this and restart. Then open Windows Sandbox from the Start menu once, which installs the <code>wsb</code> tool.</p>
-        <div class="code"><pre tabindex="0"><code>Enable-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClientVM -All</code></pre><button class="copy" type="button">Copy</button></div>
-      </li>
-      <li>
-        <h3>Pick how you want it</h3>
-        <p>The standalone CLI and optional MCP adapter use the same engine. Use the CLI from a shell; add MCP when your agent benefits from tool discovery and structured results.</p>
-        <ul class="picks">
-          <li><strong>Agent setup</strong> to have your agent do it all</li>
-          <li><strong>Agent plugin</strong> for the server and skills in one install</li>
-          <li><strong>Portable ZIP</strong> to use the CLI alone, with no Node.js or MCP setup</li>
-          <li><strong>From source</strong> to hack on it</li>
-        </ul>
-      </li>
-    </ol>
-
-    <div class="tabs tabs-ink" data-tabs>
-      <div class="tablist" role="tablist" aria-label="Ways to install sandbox-mcp">
-        <button role="tab" id="t-setup" aria-controls="p-setup" aria-selected="true" type="button">Agent setup</button>
-        <button role="tab" id="t-plugin" aria-controls="p-plugin" aria-selected="false" type="button">Agent plugin</button>
-        <button role="tab" id="t-zip" aria-controls="p-zip" aria-selected="false" type="button">Portable ZIP</button>
-        <button role="tab" id="t-source" aria-controls="p-source" aria-selected="false" type="button">From source</button>
-      </div>
-
-      <div class="panel" role="tabpanel" id="p-setup" aria-labelledby="t-setup">
-        <div class="panel-copy">
-          <h3>Let your agent set it up.</h3>
-          <p>It checks the PC and verifies the download. The CLI needs no MCP configuration; if you choose MCP, it preserves existing configuration and asks before admin changes or a restart. No Node.js install needed.</p>
-          <p><a href="https://github.com/shanselman/sandbox-mcp/blob/main/docs/agent-setup.md">Read the setup guide</a></p>
-        </div>
-        <div class="panel-code">
-          <p class="code-label">Give this to your agent</p>
-          <div class="code"><pre tabindex="0"><code>          Set up the sandbox-mcp CLI by following:
-https://raw.githubusercontent.com/shanselman/sandbox-mcp/main/docs/agent-setup.md
-          Install the latest verified release. The CLI must work without MCP; configure the optional MCP adapter only if my agent needs it. Ask before admin changes or a restart.</code></pre><button class="copy" type="button">Copy</button></div>
-        </div>
-      </div>
-
-      <div class="panel" role="tabpanel" id="p-plugin" aria-labelledby="t-plugin" hidden>
-        <div class="panel-copy">
-          <h3>Optional MCP adapter and five skills for agents.</h3>
-          <p>No cloning or MCP config to edit. Needs Node.js 20 or later. The standalone CLI does not require this plugin.</p>
-          <p>In VS Code, add <code>shanselman/sandbox-mcp</code> as a marketplace in <strong>Chat: Open Customizations</strong>, or run <strong>Chat: Install Plugin from Source</strong>.</p>
-          <p><a href="https://github.com/shanselman/sandbox-mcp/blob/main/docs/agent-plugin.md">Read the plugin guide</a></p>
-        </div>
-        <div class="panel-code">
-          <p class="code-label">GitHub Copilot CLI</p>
-          <div class="code"><pre tabindex="0"><code>copilot plugin marketplace add shanselman/sandbox-mcp
-copilot plugin install sandbox-mcp@sandbox-mcp</code></pre><button class="copy" type="button">Copy</button></div>
-          <p class="code-label">Then ask your agent</p>
-          <p class="prompt">Build this app, run it on a clean machine and show me a screenshot.</p>
-        </div>
-      </div>
-
-      <div class="panel" role="tabpanel" id="p-zip" aria-labelledby="t-zip" hidden>
-        <div class="panel-copy">
-          <h3>For the CLI. No Node.js install, MCP setup or PATH changes.</h3>
-          <p>A Windows x64 ZIP with a published SHA256, containing <code>sbx</code>, the optional MCP adapter, the skills and a private Node.js runtime. Extract it and run the CLI directly.</p>
-          <p><a class="btn" href="https://github.com/shanselman/sandbox-mcp/releases/latest">Download the latest release</a></p>
-        </div>
-        <div class="panel-code">
-          <p class="code-label">In the extracted folder</p>
-          <div class="code"><pre tabindex="0"><code>.\sbx.cmd doctor
-.\sbx.cmd run C:\Windows\System32\charmap.exe --open</code></pre><button class="copy" type="button">Copy</button></div>
-          <p class="code-hint"><code>doctor</code> is read-only. It says what&rsquo;s missing and how to fix it, and never changes your PC.</p>
-        </div>
-      </div>
-
-      <div class="panel" role="tabpanel" id="p-source" aria-labelledby="t-source" hidden>
-        <div class="panel-copy">
-          <h3>For hacking on it. Puts <code>sbx</code> on your PATH.</h3>
-          <p>Needs Node.js 20 or later. The samples include a test app, a deliberately sloppy installer and a harmless script that acts like malware.</p>
-          <p><a href="https://github.com/shanselman/sandbox-mcp">View the repository</a></p>
-        </div>
-        <div class="panel-code">
-          <p class="code-label">PowerShell</p>
-          <div class="code"><pre tabindex="0"><code>git clone https://github.com/shanselman/sandbox-mcp
-cd sandbox-mcp
-npm install
-npm link
-sbx doctor</code></pre><button class="copy" type="button">Copy</button></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="paper" id="limits">
-  <div class="wrap split">
-    <div>
-      <p class="eyebrow">Good to know</p>
+      <p class="eyebrow">Limits</p>
       <h2>What it won&rsquo;t do.</h2>
-      <p>Better you hear it here than find out halfway through a test.</p>
     </div>
     <ul class="limits">
-      <li><strong>One sandbox at a time.</strong> That&rsquo;s a Windows Sandbox rule. Runs fail fast rather than queue.</li>
-      <li><strong>Windows x64 hosts only.</strong> It needs a logged-in session, so hosted CI runners can&rsquo;t boot one.</li>
-      <li><strong>Not every Windows app.</strong> Hardware-dependent work may not run in Sandbox. Check the <a href="#compatibility">compatibility results</a>.</li>
-      <li><strong>Prerequisites are never installed for you.</strong> Bundle them, or opt in on each fresh guest and get a run labeled as not clean.</li>
-      <li><strong>Installer tests take a couple of minutes.</strong> Each system snapshot takes 10-20 s.</li>
+      <li><strong>One sandbox at a time.</strong> That&rsquo;s a Windows Sandbox rule. For many machines, persistence or Linux, use a VM.</li>
+      <li><strong>Needs a logged-in Windows x64 PC.</strong> Hosted CI runners can&rsquo;t boot one.</li>
+      <li><strong>Not every Windows app.</strong> Anything that needs special hardware may not run.</li>
+      <li><strong>It won&rsquo;t install prerequisites unless you ask.</strong> A missing one is usually the bug you&rsquo;re looking for.</li>
     </ul>
-  </div>
-</section>
-
-<section class="closer">
-  <div class="wrap">
-    <h2>Stop testing on the one PC that always works.</h2>
-    <div class="cta">
-      <a class="btn" href="#get">Get sandbox-mcp</a>
-      <a class="btn btn-ghost" href="https://github.com/shanselman/sandbox-mcp">View on GitHub</a>
-    </div>
   </div>
 </section>
 </main>

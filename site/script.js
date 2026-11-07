@@ -1,4 +1,4 @@
-// Everything here is an enhancement: without JS the page shows the full transcript and the first tab of each set.
+// Everything here is an enhancement: without JS the page shows the full agent session and the first tab of each set.
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function setupTabs(root) {
@@ -39,36 +39,103 @@ function setupCopy(button) {
   });
 }
 
-// Replays the measured runs at a compressed pace. The gaps are for reading, not measured timings.
-function setupReplay(stage) {
-  const lines = [...stage.querySelectorAll('.l')];
-  const replay = stage.querySelector('#replay');
-  let timers = [];
-
-  const play = () => {
-    timers.forEach(clearTimeout);
-    timers = [];
-    stage.classList.add('js-playing');
-    lines.forEach((l) => l.classList.remove('on'));
-    replay.hidden = true;
-    let t = 300;
-    lines.forEach((line) => {
-      const isCommand = line.classList.contains('cmd');
-      const isResult = line.classList.contains('pass') || line.classList.contains('bad');
-      t += isResult ? 1500 : isCommand ? 700 : 240;
-      timers.push(setTimeout(() => line.classList.add('on'), t));
-    });
-    timers.push(setTimeout(() => { replay.hidden = false; }, t + 200));
+// Plays the illustrated session in the hero. The gaps are for reading, not measured timings.
+function setupDemo(demo) {
+  const sbx = demo.querySelector('#demo-sbx');
+  const log = demo.querySelector('#demo-log');
+  const wire = demo.querySelector('#demo-wire');
+  const status = demo.querySelector('#demo-status');
+  const toggle = demo.querySelector('#demo-toggle');
+  const prompt = demo.querySelector('#demo-prompt');
+  const answer = demo.querySelector('#demo-answer');
+  const calls = [...demo.querySelectorAll('.call')];
+  const promptText = prompt.textContent;
+  const looks = {
+    idle: [],
+    boot: ['s-boot'],
+    copy: ['s-desk', 's-copy'],
+    app: ['s-desk', 's-app'],
+    tree: ['s-desk', 's-app', 's-tree'],
+    typed: ['s-desk', 's-app', 's-typed'],
+    greeted: ['s-desk', 's-app', 's-typed', 's-greet'],
+    shot: ['s-desk', 's-app', 's-typed', 's-greet', 's-flash'],
+    gone: ['s-gone'],
   };
+  const show = (state) => { sbx.className = ['sbx', ...looks[state]].join(' '); };
+  const follow = () => { log.scrollTop = log.scrollHeight; };
 
-  replay.addEventListener('click', play);
-  new IntersectionObserver((entries, observer) => {
-    if (!entries.some((e) => e.isIntersecting)) return;
-    observer.disconnect();
+  const steps = [];
+  const add = (ms, run) => steps.push({ ms, run });
+  add(250, () => {
+    demo.classList.add('playing');
+    prompt.textContent = '';
+    calls.forEach((c) => c.classList.remove('shown', 'running'));
+    answer.classList.remove('shown');
+    show('idle');
+    status.textContent = 'Nothing running yet';
+    follow();
+  });
+  // Type the prompt a few characters at a time.
+  for (let n = 3; n < promptText.length + 3; n += 3) add(28, () => { prompt.textContent = promptText.slice(0, n); });
+  add(500, () => {});
+  for (const call of calls) {
+    add(Number(call.dataset.ms), () => {
+      call.classList.add('shown', 'running');
+      wire.classList.add('on');
+      show(call.dataset.state);
+      status.textContent = call.dataset.status;
+      follow();
+    });
+    add(500, () => {
+      call.classList.remove('running');
+      wire.classList.remove('on');
+      follow();
+    });
+  }
+  add(0, () => { answer.classList.add('shown'); follow(); });
+
+  let at = 0;
+  let timer = null;
+  let state = 'ready';
+  const label = () => { toggle.textContent = { playing: 'Pause', paused: 'Resume', done: 'Replay' }[state]; };
+  const tick = () => {
+    if (at >= steps.length) { state = 'done'; label(); return; }
+    const step = steps[at++];
+    step.run();
+    timer = setTimeout(tick, step.ms);
+  };
+  let started = false;
+  const play = (reset = false) => {
+    if (reset) at = 0;
+    state = 'playing';
+    toggle.hidden = false;
+    label();
+    tick();
+  };
+  const start = () => {
+    if (started) return;
+    started = true;
+    play(true);
+  };
+  toggle.addEventListener('click', () => {
+    if (state === 'done') { play(true); return; }
+    clearTimeout(timer);
+    if (state === 'playing') { state = 'paused'; label(); return; }
     play();
-  }, { threshold: 0.25 }).observe(stage);
+  });
+  if ('IntersectionObserver' in window) {
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        observer.disconnect();
+        start();
+      }
+    });
+    observer.observe(demo);
+  } else {
+    start();
+  }
 }
 
 document.querySelectorAll('[data-tabs]').forEach(setupTabs);
 document.querySelectorAll('.copy').forEach(setupCopy);
-if (!reduceMotion) setupReplay(document.getElementById('stage'));
+if (!reduceMotion) setupDemo(document.getElementById('demo'));

@@ -36,6 +36,34 @@ test('site positions the CLI as standalone and MCP as optional', () => {
   assert.match(html, /no Node\.js install, MCP setup or PATH changes/i);
 });
 
+test('site explains the project CLI name and matches social metadata', () => {
+  const title = html.match(/<title>([^<]+)<\/title>/)[1];
+  assert.equal(html.match(/property="og:title" content="([^"]+)"/)[1], title);
+  const description = html.match(/name="description" content="([^"]+)"/)[1];
+  assert.equal(html.match(/property="og:description" content="([^"]+)"/)[1], description);
+  assert.match(html, /Docker also has its own <code>sbx<\/code> command/);
+  assert.match(html, /docs\.docker\.com\/reference\/cli\/sbx/);
+});
+
+test('site shows app-specific UI assertions and pairs commands with results', () => {
+  assert.match(html, /Starting isn&rsquo;t proof/);
+  assert.match(html, /Wait-SbxUi @app -AutomationId Output -Name 'Hello, Sandbox Tester!'/);
+  assert.match(html, /greeting\.txt does not match the label/);
+  assert.match(html, /sbx run \.\\samples\\HelloSandbox\\bin --test \.\\samples\\HelloSandbox\\test\.ps1<\/span>\s+PASS\s+HelloSandbox\.exe/);
+  assert.match(html, /sbx run \.\\NativeProof\.exe --network off<\/span>\s+<span class="bad"><b>FAIL<\/b><\/span>\s+NativeProof\.exe/);
+  assert.equal((html.match(/class="dot red"/g) ?? []).length, 3);
+  assert.match(html, /3 red flag\(s\)/);
+});
+
+test('hero demo waits until visible and exposes a readable transcript', () => {
+  const script = read('site/script.js');
+  const styles = read('site/styles.css');
+  assert.match(script, /new IntersectionObserver/);
+  assert.match(styles, /height: min\(440px, 70vh\)/);
+  assert.match(html, /<details class="demo-transcript">/);
+  assert.match(html, /Read the full demo transcript/);
+});
+
 test('site removes screenshot galleries and keeps compatibility timings and CLI examples', () => {
   assert.doesNotMatch(html, /Measured, not promised|id="measured"|#measured/i);
   assert.doesNotMatch(html, /assets\/(?:compat-(?:native|wpf|winui)\.png|sandbox-teaser\.gif|haptics-teaser\.png)/i);
