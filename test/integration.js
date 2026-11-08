@@ -12,21 +12,38 @@ import { atomicJson, readJson, withStateLock } from '../src/coordination.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const runtimeRoot = process.env.SANDBOX_MCP_TEST_ROOT ? path.resolve(process.env.SANDBOX_MCP_TEST_ROOT) : root;
+const packaged = Boolean(process.env.SANDBOX_MCP_TEST_ROOT);
+const cmd = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
+if (packaged) {
+  for (const launcher of ['sbx.cmd', 'sandbox-mcp.cmd']) {
+    assert.ok(fs.existsSync(path.join(runtimeRoot, launcher)), `Package launcher ${launcher} is missing.`);
+  }
+}
 const execute = promisify(execFile);
 const network = process.argv[2] || 'off';
 assert.ok(['off', 'on', 'firewall'].includes(network), 'Usage: node test\\integration.js [off|on|firewall]');
 assert.ok(process.env.SANDBOX_MCP_HOME, 'Set a lane-specific SANDBOX_MCP_HOME before running.');
 const evidenceDir = path.join(process.env.SANDBOX_MCP_HOME, 'integration');
 fs.mkdirSync(evidenceDir, { recursive: true });
-const evidence = { network, runtimeRoot, runtime: process.execPath, startedAt: new Date().toISOString(), checks: [] };
+const evidence = { network, runtimeRoot, runtime: packaged ? path.join(runtimeRoot, 'sbx.cmd') : process.execPath,
+  startedAt: new Date().toISOString(), checks: [] };
 const record = (name, detail) => {
   evidence.checks.push({ name, detail });
   console.log(`ok ${name}${detail ? `: ${JSON.stringify(detail)}` : ''}`);
 };
 const save = () => fs.writeFileSync(path.join(evidenceDir, `${network}.json`), JSON.stringify(evidence, null, 2));
 async function cli(...args) {
-  const { stdout } = await execute(process.execPath, [path.join(runtimeRoot, 'src', 'cli.js'), args[0], '--json', ...args.slice(1)], {
+  const cliArgs = [args[0], '--json', ...args.slice(1)];
+  // Quote for Windows argv, then escape cmd metacharacters before the .cmd forwards %*.
+  const quote = (arg) => `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1')}"`
+    .replace(/([()\][%!^"`<>&|;, *?])/g, '^$1');
+  const command = packaged ? cmd : process.execPath;
+  const commandArgs = packaged
+    ? ['/d', '/s', '/c', `"sbx.cmd ${cliArgs.map(quote).join(' ')}"`]
+    : [path.join(runtimeRoot, 'src', 'cli.js'), ...cliArgs];
+  const { stdout } = await execute(command, commandArgs, {
     cwd: runtimeRoot, timeout: 600_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true,
+    windowsVerbatimArguments: packaged,
   });
   return JSON.parse(stdout);
 }
@@ -45,18 +62,22 @@ const json = async (name, args) => JSON.parse((await call(name, args)).text);
 try {
   evidence.sha = process.env.SANDBOX_MCP_TEST_SHA || (await execute('git', ['rev-parse', 'HEAD'], { cwd: root })).stdout.trim();
   if (process.env.SANDBOX_MCP_EXPECT_NO_HOST_NODE === '1') {
-    const lookup = await execute('where.exe', ['node'], { timeout: 10_000 }).then(
-      (result) => ({ code: 0, stdout: result.stdout }),
-      (error) => ({ code: error.code, stdout: error.stdout }),
-    );
-    assert.equal(lookup.code, 1, `Host Node is visible on PATH: ${lookup.stdout}`);
-    assert.equal(path.resolve(process.execPath), path.join(runtimeRoot, 'node.exe'));
-    record('bundled runtime with host Node absent from PATH');
+    assert.ok(packaged, 'Set SANDBOX_MCP_TEST_ROOT to the extracted package directory.');
+    for (const runtime of ['node', 'bun']) {
+      const lookup = await execute('where.exe', [runtime], { timeout: 10_000 }).then(
+        (result) => ({ code: 0, stdout: result.stdout }),
+        (error) => ({ code: error.code, stdout: error.stdout }),
+      );
+      assert.equal(lookup.code, 1, `Host ${runtime} is visible on PATH: ${lookup.stdout}`);
+    }
+    record('package launchers with host Node and Bun absent from PATH');
   }
   await execute('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
     path.join(root, 'samples', 'HelloSandbox', 'build.ps1')], { cwd: root, timeout: 60_000 });
   await client.connect(new StdioClientTransport({
-    command: process.execPath, args: [path.join(runtimeRoot, 'src', 'server.js')], stderr: 'inherit', env: { ...process.env },
+    command: packaged ? path.join(runtimeRoot, 'sandbox-mcp.cmd') : process.execPath,
+    args: packaged ? [] : [path.join(runtimeRoot, 'src', 'server.js')],
+    cwd: runtimeRoot, stderr: 'inherit', env: { ...process.env },
   }));
   connected = true;
   const tools = (await client.listTools()).tools;
