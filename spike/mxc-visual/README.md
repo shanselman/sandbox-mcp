@@ -404,6 +404,14 @@ a fixture heartbeat while the capture loop does only capture/publication.
 Actual monitor DPI is still unchanged. The cadence/overlap keep bar is not
 lowered to accommodate a failed run.
 
+The second attempt (`evidence\grid-20261110-0503`) captured all 30 frames in
+each of sessions 20/21/22 and cleaned up, but still failed the overall keep
+bar: normal-user viewer progress replacement encountered the same Windows
+file-replacement problem, and one large-variant frame gap was 5843 ms.
+Average cadence alone (about 1fps in each stream) was not counted as a pass.
+Viewer progress and batch state now use immutable snapshots as well.
+This last correction is ordinary client/viewer code, not a service update.
+
 ## Experimental microVM and export discovery
 
 `microvm.json` and `hyperlight.json` are bounded smoke requests for the current

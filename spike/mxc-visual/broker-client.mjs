@@ -175,14 +175,15 @@ async function runGrid(root, status) {
     throw error;
   }
   const runs = [];
-  if (!failure) for (const record of records) {
+  if (response?.results?.length === 3) for (const record of records) {
     const result = response.results.find(result => result.report.id === record.id);
+    if (result?.report.success !== true) continue;
     const directory = path.join(here, 'evidence', `broker-${record.id}`, 'visual');
     const visual = verifyVisualEvidence(directory, result.report.sessionId, record.metadata.agentUserName);
     const raw = JSON.parse(fs.readFileSync(path.join(directory, 'stream.json'), 'utf8'));
     const fixture = JSON.parse(fs.readFileSync(path.join(directory, 'fixture-settings.json'), 'utf8'));
     const stream = summarizeStream(raw, fixture, record.variant);
-    if (!stream.cadenceMet) failure = new Error('At least one live stream missed the cadence threshold');
+    if (!stream.cadenceMet) failure ??= new Error('At least one live stream missed the cadence threshold');
     runs.push({ variant: record.variant, response: result, visual, stream, cleanup: cleanup.find(item => item.id === record.id),
       observedFrames: progress.find(item => item.id === record.id)?.observedFrames,
       firstFrameAt: raw.frames[0].at, lastFrameAt: raw.frames.at(-1).at });

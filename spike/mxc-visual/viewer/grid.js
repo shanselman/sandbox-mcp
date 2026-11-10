@@ -33,7 +33,7 @@ async function update() {
       tile.metrics.textContent = [
         `Session ${frame?.sessionId ?? run.sessionId ?? '—'} · frame ${frame ? frame.sequence + 1 : '—'}/30`,
         `Theme ${fixture?.theme ?? run.stream?.theme ?? 'pending'} · actual DPI ${fixture?.actualWindowDpi ?? run.stream?.actualWindowDpi ?? '—'}`,
-        `Fixture scale ${fixture?.fixtureLayoutScale ?? run.stream?.fixtureLayoutScale ?? '—'}×`,
+        `Fixture scale ${fixture?.fixtureLayoutScale ?? run.stream?.fixtureLayoutScale ?? '—'}× · capture ${frame?.width ?? '—'}×${frame?.height ?? '—'}`,
         frame ? `Captured ${new Date(frame.at).toLocaleTimeString()} · age ${(Math.max(0, run.ageMs) / 1000).toFixed(1)}s` : 'No frame received',
         run.stream ? `Measured ${run.stream.measuredFps.toFixed(3)} fps · max gap ${run.stream.maximumIntervalMs}ms` : '',
         run.error ?? run.progress?.error ?? frame?.error ?? '',

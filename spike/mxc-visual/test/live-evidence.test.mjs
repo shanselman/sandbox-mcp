@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readFrame, summarizeStream, startLiveCollector, requireFreshLiveOutput } from '../live-evidence.mjs';
+import { readFrame, summarizeStream, startLiveCollector, requireFreshLiveOutput, readProgress, readBatch } from '../live-evidence.mjs';
 
 const key = '0123456789abcdef0123456789abcdef';
 const fixture = { variant: 'dark-large', theme: 'Dark', actualWindowDpi: 96, rasterizationScale: 1,
@@ -88,4 +88,31 @@ test('immutable frame publication survives a reader holding earlier metadata ope
     }
     assert.equal(observed.sequences.size, 5);
   } finally { for (const reader of readers) fs.closeSync(reader); }
+});
+test('viewer reads immutable progress and final batch state without replacing open files', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'full-progress-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const workspace = path.join(root, 'shared'), source = path.join(workspace, `broker-${key}`), destination = path.join(root, 'out');
+  fs.mkdirSync(source, { recursive: true });
+  const collector = startLiveCollector(workspace, destination, { id: key, variant: 'dark' });
+  const reader = fs.openSync(path.join(destination, 'progress-00000.json'), 'r');
+  try {
+    for (let sequence = 0; sequence < 3; sequence++) {
+      const suffix = String(sequence).padStart(3, '0');
+      const bytes = Buffer.alloc(32); Buffer.from('89504e470d0a1a0a', 'hex').copy(bytes); bytes[31] = sequence;
+      fs.writeFileSync(path.join(source, `frame-${suffix}.png`), bytes);
+      fs.writeFileSync(path.join(source, `frame-meta-${suffix}.json`), JSON.stringify({
+        sequence, at: new Date().toISOString(), sessionId: 20, file: `frame-${suffix}.png`,
+      }));
+      await new Promise(resolve => setTimeout(resolve, 300));
+      assert.equal(readProgress(destination).frame.sequence, sequence);
+    }
+    assert.equal(collector.finish().observedFrames, 3);
+    assert.equal(readProgress(destination).state, 'complete');
+  } finally { fs.closeSync(reader); }
+  fs.writeFileSync(path.join(root, 'batch.json'), '{"state":"prepared"}');
+  fs.writeFileSync(path.join(root, 'batch-started.json'), '{"state":"starting"}');
+  assert.equal(readBatch(root).state, 'starting');
+  fs.writeFileSync(path.join(root, 'batch-finished.json'), '{"state":"passed"}');
+  assert.equal(readBatch(root).state, 'passed');
 });

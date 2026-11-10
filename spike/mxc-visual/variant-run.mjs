@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { atomicJson } from './broker-client-state.mjs';
+import { readBatch } from './live-evidence.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const prepare = process.argv[2] === '--prepare';
@@ -17,7 +18,7 @@ if (prepare) {
     runs: ['light', 'dark', 'dark-large'].map(variant => ({ variant, state: 'pending' })) });
   console.log(JSON.stringify({ root, prepared: true }));
 } else {
-  const batch = JSON.parse(fs.readFileSync(batchFile, 'utf8'));
+  const batch = readBatch(root);
   if (batch.schema !== 1 || batch.mode !== 'concurrent' || batch.runs.some(run => run.state !== 'pending'))
     throw new Error('Batch is not fresh; do not silently repeat completed/provisioned work');
   let failed = false;
@@ -25,7 +26,7 @@ if (prepare) {
     run.state = 'starting';
     run.startedAt = new Date().toISOString();
   }
-  atomicJson(batchFile, batch);
+  atomicJson(path.join(root, 'batch-started.json'), batch);
   const child = spawn(process.execPath, [path.join(here, 'broker-client.mjs'), 'run-grid', root],
     { stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '', stderr = '', outputExceeded = false;
@@ -60,7 +61,7 @@ if (prepare) {
   }
   batch.completedAt = new Date().toISOString();
   batch.state = failed ? 'failed' : 'passed';
-  atomicJson(batchFile, batch);
+  atomicJson(path.join(root, 'batch-finished.json'), batch);
   atomicJson(path.join(root, 'report.json'), batch);
   const lines = [
     '# Full-session visual variants', '',

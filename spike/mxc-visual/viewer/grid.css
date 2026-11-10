@@ -4,7 +4,7 @@ header { display: flex; justify-content: space-between; align-items: center; gap
 h1 { margin: 4px 0; font-size: 30px; } p { color: #aab8ca; line-height: 1.5; }
 .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .13em; color: #8caee9; margin: 0; }
 aside { background: #1b2534; padding: 16px; border: 1px solid #33445d; border-radius: 10px; line-height: 1.5; font-size: 13px; margin: 18px 0; }
-#grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; }
+#grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; }
 article { border: 1px solid #39465b; border-radius: 12px; background: #19212d; overflow: hidden; min-width: 0; }
 .tile-head { padding: 14px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 h2 { font-size: 17px; margin: 0; } .badge, #summary { padding: 5px 9px; border-radius: 6px; font-size: 12px; background: #303c4e; white-space: nowrap; }

@@ -4,6 +4,7 @@ import http from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { atomicJson } from './broker-client-state.mjs';
+import { readProgress, readBatch } from './live-evidence.mjs';
 
 const root = path.resolve(process.argv[2] ?? '');
 if (process.argv.length !== 3 || !fs.existsSync(path.join(root, 'batch.json'))) throw new Error('Expected a prepared batch directory');
@@ -26,11 +27,10 @@ const server = http.createServer((request, response) => {
     if (['grid.js', 'grid.css'].includes(relative))
       return send(200, relative.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8', fs.readFileSync(path.join(here, 'viewer', relative)));
     if (relative === 'state') {
-      const batch = JSON.parse(fs.readFileSync(path.join(root, 'batch.json'), 'utf8'));
+      const batch = readBatch(root);
       const runs = batch.runs.map(run => {
         if (!['light', 'dark', 'dark-large'].includes(run.variant)) throw new Error('Unexpected variant');
-        const progressFile = path.join(root, run.variant, 'progress.json');
-        const progress = fs.existsSync(progressFile) ? JSON.parse(fs.readFileSync(progressFile, 'utf8')) : null;
+        const progress = readProgress(path.join(root, run.variant));
         const frame = progress?.frame;
         const ageMs = frame ? Date.now() - Date.parse(frame.at) : null;
         const completed = ['passed', 'failed', 'skipped'].includes(run.state) || ['complete', 'failed'].includes(progress?.state);

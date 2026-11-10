@@ -57,19 +57,39 @@ export function requireFreshLiveOutput(destination) {
     throw new Error('Live output is not fresh; choose a new run directory');
 }
 
+export function readProgress(directory) {
+  const final = path.join(directory, 'progress-final.json');
+  if (fs.existsSync(final)) return JSON.parse(fs.readFileSync(final, 'utf8'));
+  if (!fs.existsSync(directory)) return null;
+  const records = fs.readdirSync(directory).filter(name => /^progress-\d{5}\.json$/.test(name)).sort();
+  const latest = records.at(-1);
+  if (latest) return JSON.parse(fs.readFileSync(path.join(directory, latest), 'utf8'));
+  const legacy = path.join(directory, 'progress.json');
+  return fs.existsSync(legacy) ? JSON.parse(fs.readFileSync(legacy, 'utf8')) : null;
+}
+
+export function readBatch(root) {
+  const file = ['batch-finished.json', 'batch-started.json', 'batch.json'].find(name => fs.existsSync(path.join(root, name)));
+  if (!file) throw new Error('Missing prepared batch');
+  return JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
+}
+
 export function startLiveCollector(workspace, destination, initial) {
   requireFreshLiveOutput(destination);
   const observed = { sequences: new Map() };
   let stopped = false, fault;
+  let publication = 0;
   let progress = { ...initial, state: 'starting', targetFps: 1 };
   fs.mkdirSync(destination, { recursive: true });
-  const write = () => atomicJson(path.join(destination, 'progress.json'), progress);
+  const write = () => atomicJson(path.join(destination, `progress-${String(publication++).padStart(5, '0')}.json`), progress);
   write();
   const tick = () => {
     if (stopped) return;
     try {
       const frame = readFrame(workspace, destination, observed);
-      if (frame) { progress = { ...progress, state: frame.error ? 'capture-error' : 'live', frame }; write(); }
+      if (frame && (frame.sequence !== progress.frame?.sequence || frame.error !== progress.frame?.error)) {
+        progress = { ...progress, state: frame.error ? 'capture-error' : 'live', frame }; write();
+      }
     } catch (error) {
       fault = error.message;
       progress = { ...progress, state: 'capture-error', error: fault };
@@ -85,7 +105,7 @@ export function startLiveCollector(workspace, destination, initial) {
       finally { stopped = true; }
       progress = { ...progress, state: error || fault ? 'failed' : 'complete', completedAt: new Date().toISOString(),
         ...(error || fault ? { error: error ?? fault } : {}), observedFrames: observed.sequences.size };
-      write();
+      atomicJson(path.join(destination, 'progress-final.json'), progress);
       atomicJson(path.join(destination, 'observed-frames.json'), [...observed.sequences.values()]);
       if (fault) throw new Error(`Live evidence collection failed: ${fault}`);
       return progress;
@@ -115,5 +135,6 @@ export function summarizeStream(stream, fixture, expectedVariant) {
     maximumIntervalMs: Math.max(...intervals), cadenceMet: fps >= .9 && Math.max(...intervals) <= 2000,
     actualWindowDpi: fixture.actualWindowDpi, rasterizationScale: fixture.rasterizationScale,
     theme: fixture.theme, fixtureLayoutScale: fixture.fixtureLayoutScale, scaleIsSimulation: fixture.scaleIsSimulation,
+    captureSizes: [...new Set(good.map(frame => `${frame.width}x${frame.height}`))],
   };
 }
