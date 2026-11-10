@@ -36,10 +36,14 @@ The viewer has compact fit-to-count layouts for 4/8/16 recorded image tiles
 and semantic theme-token support with system-appearance fallback. Detailed
 evidence is expandable; supplied names render as text. Host mode and semantic
 tokens are supported on either the root or body, including live token/mode
-changes and precedence over the OS theme. The observed ordinary Browser page
-currently has neither injected root nor body tokens; extension-canvas hosting
-is still being integrated. Layout capacity does not increase native session
-capacity; zoom is deferred.
+changes and precedence over the OS theme. The project extension in
+`.github/extensions/camera-grid` hosts the same viewer in a native extension
+canvas, the theme-aware path used by Agent Review and hanselprojects.
+Open `camera-grid` with `{ "batch": "<directory under spike/mxc-visual/evidence>" }`.
+Its only action, `get_state`, reads evidence; it never creates sessions.
+The standalone Browser/CLI path remains available with OS fallback.
+Tile zoom ranges from 75% to 200%, with **Auto fit** restoring count-responsive
+sizing. Zoom does not modify screenshots, fixture scale, or native capacity.
 
 Requires Windows with the IsolationSession backend, .NET 10 SDK, and **Node
 24.21+ or 26.8+** (prerelease Node fails the SDK's native-stdio check).

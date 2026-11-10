@@ -4,7 +4,13 @@
 <title>Agent camera grid</title><link rel="stylesheet" href="grid.css"></head>
 <body>
 <header><div><p class="eyebrow">EXPERIMENTAL WINDOWS FULL SESSIONS</p><h1>Agent camera grid</h1>
-<p id="subtitle">Session evidence · 1fps target per session · PrintWindow flag 2</p></div><span id="summary" role="status">Connecting</span></header>
+<p id="subtitle">Session evidence · 1fps target per session · PrintWindow flag 2</p></div><span id="summary" role="status">Connecting</span>
+<div class="zoom" role="group" aria-label="Tile size">
+<button id="zoom-out" type="button" aria-label="Smaller tiles">−</button>
+<output id="zoom-level" aria-live="polite">Auto</output>
+<button id="zoom-in" type="button" aria-label="Larger tiles">+</button>
+<button id="zoom-fit" type="button">Auto fit</button>
+</div></header>
 <aside id="provenance">MXC provisions the accounts; our installed broker creates Full sessions through experimental Windows APIs.
 All three sessions are created before their workers launch together. Completed tiles show recorded evidence, not live desktops.</aside>
 <main id="grid" aria-label="Agent session camera tiles" data-density="standard"></main>

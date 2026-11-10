@@ -32,10 +32,11 @@ class Element {
     this.parent = null;
   }
   removeAttribute(name) { delete this[name]; }
+  addEventListener(name, callback) { this[name] = callback; }
 }
 
 function harness() {
-  const elements = new Map(['grid', 'subtitle', 'provenance', 'summary', 'details', 'error'].map(id => [id, new Element('div')]));
+  const elements = new Map(['grid', 'subtitle', 'provenance', 'summary', 'details', 'error', 'zoom-in', 'zoom-out', 'zoom-fit', 'zoom-level'].map(id => [id, new Element('div')]));
   const calls = [];
   const context = vm.createContext({
     document: { createElement: tag => new Element(tag), getElementById: id => elements.get(id) },
@@ -65,6 +66,24 @@ test('density follows actual tile count and removed sessions do not linger', () 
   }
   assert.equal(calls[0][0], 'state');
   assert.equal(calls[0][1].cache, 'no-store');
+});
+
+test('zoom is bounded, retained through polling and reset to adaptive sizing', () => {
+  const { context, elements } = harness();
+  const value = () => elements.get('grid').style['--zoom'];
+  assert.equal(value(), '1');
+  for (let i = 0; i < 10; i++) elements.get('zoom-in').click();
+  assert.equal(value(), '2');
+  assert.equal(elements.get('zoom-in').disabled, true);
+  context.renderBatch(batch(16));
+  assert.equal(value(), '2');
+  for (let i = 0; i < 10; i++) elements.get('zoom-out').click();
+  assert.equal(value(), '0.75');
+  assert.equal(elements.get('zoom-out').disabled, true);
+  elements.get('zoom-fit').click();
+  assert.equal(value(), '1');
+  assert.equal(elements.get('grid').dataset.density, 'dense');
+  assert.equal(elements.get('zoom-level').textContent, 'Auto');
 });
 
 test('stable id/requestId keys survive renaming and reordering; names remain text', () => {
@@ -284,6 +303,17 @@ test('real browser: 4/8/16 tiles, narrow viewports, token and system theme prece
     }
   }
   assert.ok(sizes[0] > sizes[1] && sizes[1] > sizes[2], 'more tiles start smaller');
+  await browser.send('Emulation.setDeviceMetricsOverride', { width: 1200, height: 900, deviceScaleFactor: 1, mobile: false });
+  const widthAt = () => evaluate('document.querySelector("article").getBoundingClientRect().width');
+  const autoWidth = await widthAt();
+  await evaluate('document.getElementById("zoom-in").click(); document.getElementById("zoom-in").click()');
+  assert.ok(await widthAt() > autoWidth, 'larger tiles actually grow');
+  for (const width of [320, 240]) {
+    await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+    assert.ok(await evaluate('document.documentElement.scrollWidth <= innerWidth'), 'zoom does not overflow a narrow panel');
+  }
+  await evaluate('document.getElementById("zoom-fit").click()');
+  assert.equal(await evaluate('document.getElementById("zoom-level").textContent'), 'Auto');
   for (const [scheme, expected] of [['light', 'rgb(255, 255, 255)'], ['dark', 'rgb(13, 17, 23)']]) {
     await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
     assert.equal(await evaluate('getComputedStyle(document.documentElement).backgroundColor'), expected);

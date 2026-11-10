@@ -1,5 +1,19 @@
 const cards = new Map();
 let replay = false;
+const zoomLevels = [0.75, 1, 1.25, 1.5, 2];
+let zoomIndex = 1;
+function setZoom(index) {
+  zoomIndex = Math.max(0, Math.min(zoomLevels.length - 1, index));
+  const zoom = zoomLevels[zoomIndex];
+  document.getElementById('grid').style.setProperty('--zoom', zoom);
+  document.getElementById('zoom-level').textContent = zoom === 1 ? 'Auto' : `${zoom * 100}%`;
+  document.getElementById('zoom-out').disabled = zoomIndex === 0;
+  document.getElementById('zoom-in').disabled = zoomIndex === zoomLevels.length - 1;
+}
+document.getElementById('zoom-out').addEventListener('click', () => setZoom(zoomIndex - 1));
+document.getElementById('zoom-in').addEventListener('click', () => setZoom(zoomIndex + 1));
+document.getElementById('zoom-fit').addEventListener('click', () => setZoom(1));
+setZoom(1);
 function identity(run, index) {
   for (const field of ['id', 'requestId', 'variant']) {
     const value = run[field];
