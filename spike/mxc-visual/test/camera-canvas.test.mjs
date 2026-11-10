@@ -25,10 +25,25 @@ test('native canvas shares the read-only server and idempotent opens, then close
   const [first, second] = await Promise.all([canvas.open(context), canvas.open(context)]);
   assert.equal(first.url, second.url);
   assert.equal(new URL(first.url).hostname, '127.0.0.1');
-  assert.equal((await fetch(first.url)).status, 200);
+  const page = await fetch(first.url);
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get('content-security-policy'), /script-src 'self';/);
+  assert.match(page.headers.get('content-security-policy'), /style-src-elem 'self' 'unsafe-inline';/);
   assert.equal((await fetch(new URL('grid.js', first.url))).status, 200);
   const state = await canvas.actions[0].handler(context);
   assert.equal(state.state, 'prepared');
+  assert.equal(state.appearance, null);
+  const appearance = { source: 'host', mode: 'dark', background: 'rgb(32, 36, 42)',
+    foreground: 'rgb(241, 243, 245)', backgroundToken: '#20242a', font: 'Segoe UI', cspDirectives: [] };
+  const sendAppearance = value => fetch(new URL('appearance', first.url), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value),
+  });
+  assert.equal((await sendAppearance(appearance)).status, 200);
+  assert.equal((await canvas.actions[0].handler(context)).appearance.backgroundToken, '#20242a');
+  assert.equal((await sendAppearance({ ...appearance, command: 'not-an-execution-endpoint' })).status, 400);
+  assert.equal((await sendAppearance({ ...appearance, font: 'a'.repeat(257) })).status, 400);
+  assert.equal((await canvas.actions[0].handler(context)).appearance.font, 'Segoe UI');
+  assert.equal((await canvas.actions[1].handler(context)).requests.appearances, 1);
   assert.equal((await fetch(new URL('state', first.url), { method: 'POST' })).status, 403);
   assert.equal((await fetch(new URL('/', first.url))).status, 404);
   assert.equal((await fetch(first.url, { headers: { Origin: 'https://not-the-viewer.example' } })).status, 403);

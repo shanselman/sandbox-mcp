@@ -4,8 +4,8 @@
 `0xEF CRITICAL_PROCESS_DIED` after its workers finished. Do not run these live
 experiments on a primary machine while the Windows lifecycle investigation
 is unresolved. Offline tests/replay are not proof that the native APIs are
-safe. The installed service has deliberately not been updated by subsequent
-safe-only source work.
+safe. The first safe-only verification pass deliberately left the installed
+service unchanged; the later user-approved candidate update is recorded below.
 
 **Post-update follow-up:** the user installed a candidate Windows fix,
 rebooted, and approved a new pinned broker package. See
@@ -27,10 +27,10 @@ Read [the Proxmox reference learnings](../../docs/proxmox-reference-learnings.md
 for source-verified lifecycle/capture ideas and limitations; no upstream code
 was copied.
 
-**Safe work after the crash:** [offline lifecycle tests, replay and findings](../../docs/full-session-safe-verification.md).
+**Historical safe-only work after the crash:** [offline lifecycle tests, replay and findings](../../docs/full-session-safe-verification.md).
 The replay uses copies of preserved images only and explicitly retains the
-failed source-run verdict. Source-only hardening has not been installed over
-the broker package that ran the experiment.
+failed source-run verdict. That hardening was later included in the explicitly
+approved candidate broker update; it did not alter the original evidence.
 
 The viewer has compact fit-to-count layouts for 4/8/16 recorded image tiles
 and semantic theme-token support with system-appearance fallback. Detailed
@@ -40,10 +40,15 @@ changes and precedence over the OS theme. The project extension in
 `.github/extensions/camera-grid` hosts the same viewer in a native extension
 canvas, the theme-aware path used by Agent Review and hanselprojects.
 Open `camera-grid` with `{ "batch": "<directory under spike/mxc-visual/evidence>" }`.
-Its only action, `get_state`, reads evidence; it never creates sessions.
+`get_state` reads evidence; `get_view` reports only the renderer's public theme
+tokens and page activity. Neither creates sessions. Theme readback is bounded
+in-memory diagnostic data, never an evidence-file write or execution endpoint.
 The standalone Browser/CLI path remains available with OS fallback.
 Tile zoom ranges from 75% to 200%, with **Auto fit** restoring count-responsive
 sizing. Zoom does not modify screenshots, fixture scale, or native capacity.
+The host mirrors its palette with an inline stylesheet: the viewer permits
+inline style elements but not inline scripts. `get_view` can distinguish
+actual injected host tokens from OS fallback and surface CSP rejection.
 
 Requires Windows with the IsolationSession backend, .NET 10 SDK, and **Node
 24.21+ or 26.8+** (prerelease Node fails the SDK's native-stdio check).
@@ -375,6 +380,11 @@ dotnet build broker -c Release
 .\broker\bin\Release\net10.0-windows\SandboxMcp.FullBroker.exe selftest
 node --test test\broker-client-state.test.mjs test\broker-client-lock.test.mjs
 ```
+
+Do not run `broker-client-lock.test.mjs` concurrently with live client
+workflows: it deliberately exercises the real owner workflow lock and must
+fail to acquire it while a live run holds it. Run the full offline suite
+between live batches, not as a second native-workflow owner.
 
 ### Coordinated camera-grid prototype
 

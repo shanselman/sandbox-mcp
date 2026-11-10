@@ -77,6 +77,44 @@ startup. The host remained up, but this warning is retained rather than
 turning the smoke into a blanket native-safety claim. The earlier bugcheck's
 root cause and this candidate fix's sufficiency remain unproven.
 
+### First six coordinated qualification runs
+
+After the baseline smoke, a single-session stream produced 30 valid images
+at 1.0002 fps with a 1,003-ms maximum interval. Six subsequent coordinated
+grids each created three independent sessions, captured 30 images per session,
+and completed teardown. Every one of the **540 grid PNGs** was decoded and
+CRC/geometry checked after cleanup; collector copies matched preserved
+bytes. Each stream contained changing image hashes, including valid final
+frames. Fresh light, dark and enlarged-dark before/after pixels were inspected.
+
+| Grid | Valid PNGs | Common coverage | Worst interval |
+|---|---:|---:|---:|
+| 1 | 90 | 28,222 ms | 1,035 ms |
+| 2 | 90 | 28,017 ms | 1,040 ms |
+| 3 | 90 | 28,652 ms | 1,037 ms |
+| 4 | 90 | 27,889 ms | 1,047 ms |
+| 5 | 90 | 28,323 ms | 1,007 ms |
+| 6 | 90 | 28,789 ms | 1,036 ms |
+
+The original bars were unchanged: 30 frames, mean >=0.9 fps, maximum gap
+<=2,000 ms and overlap >=20,000 ms. Broker pending work was empty between
+cycles. Independent account/profile inventory confirmed all 18 grid identities
+absent. Together with the two single-session tests, this exercised 20 Full
+session lifecycles without a new reboot at this checkpoint.
+
+Explorer and ShellHost `0xc0000409` startup events recur. They are retained as
+warnings, not filtered out of the findings. These runs demonstrate the fixed
+fixture's capture/automation/cleanup path on one host, not a clean shell,
+general Windows stability, or support for arbitrary applications. Both
+Windows and our broker/evidence writer changed, so this is not a controlled
+attribution of the improvement to either change.
+
+A bounded extension to 30 grids runs serial batches of three, with a
+90-minute ceiling, readiness checks, no pending jobs at cycle boundaries,
+and a full image audit after each cycle. It stops on the first failure and
+never resumes automatically across a reboot. Completion is not implied by
+this plan; actual completed-run receipts are the evidence.
+
 ## What happens when Windows updates today
 
 1. The broker compares required exports, architecture and exact module hashes

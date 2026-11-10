@@ -8,6 +8,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { CAMERA_CSP } from '../camera-server.mjs';
 
 const viewer = fileURLToPath(new URL('../viewer/', import.meta.url));
 const script = fs.readFileSync(path.join(viewer, 'grid.js'), 'utf8');
@@ -210,13 +211,18 @@ test('real browser: 4/8/16 tiles, narrow viewports, token and system theme prece
   fs.mkdirSync(profile);
   let current = batch(4);
   const server = http.createServer((request, response) => {
+    response.setHeader('Content-Security-Policy', CAMERA_CSP);
     if (request.url === '/state') {
       response.setHeader('content-type', 'application/json');
       response.end(JSON.stringify(current));
     } else if (request.url === '/synthetic.svg') {
       response.setHeader('content-type', 'image/svg+xml');
       response.end('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect width="640" height="480" fill="#8090a0"/><text x="20" y="60">SYNTHETIC LAYOUT TEST</text></svg>');
-    } else if (['/', '/grid.css', '/grid.js'].includes(request.url)) {
+    } else if (request.url === '/appearance' && request.method === 'POST') {
+      request.resume();
+      response.setHeader('content-type', 'application/json');
+      response.end('{"ok":true}');
+    } else if (['/', '/grid.css', '/grid.js', '/appearance.js'].includes(request.url)) {
       const file = request.url === '/' ? 'index.html' : request.url.slice(1);
       response.setHeader('content-type', file.endsWith('.css') ? 'text/css' : file.endsWith('.js') ? 'text/javascript' : 'text/html');
       response.end(fs.readFileSync(path.join(viewer, file)));
@@ -385,4 +391,18 @@ test('real browser: 4/8/16 tiles, narrow viewports, token and system theme prece
   assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), 'rgb(255, 255, 255)', 'removing host tokens restores system fallback');
   await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
   assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), 'rgb(13, 17, 23)');
+  await evaluate(`(() => {
+    const theme = document.createElement('style'); theme.id = 'host-theme-test';
+    theme.textContent = ':root, body { --background-color-default: #243648; --text-color-default: #f1f3f5; }';
+    document.head.append(theme);
+  })()`);
+  assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), 'rgb(36, 54, 72)',
+    'the actual CSP permits the canvas host inline theme stylesheet');
+  assert.equal(await evaluate('getComputedStyle(document.body).color'), 'rgb(241, 243, 245)');
+  await evaluate(`(() => {
+    const inline = document.createElement('script');
+    inline.textContent = 'window.inlineScriptUnexpectedlyRan = true';
+    document.head.append(inline);
+  })()`);
+  assert.equal(await evaluate('window.inlineScriptUnexpectedlyRan === true'), false, 'inline scripts remain blocked');
 });

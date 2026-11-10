@@ -29,7 +29,18 @@ export function cameraCanvasOptions(evidenceRoot = evidence) {
       handler: async ctx => {
         const entry = entries.get(ctx.instanceId);
         if (!entry) throw new Error('Camera grid instance is not open');
-        return (await entry.server).state();
+        const viewer = await entry.server;
+        return { ...viewer.state(), appearance: viewer.appearance() ?? null };
+      },
+    }, {
+      name: 'get_view',
+      description: 'Read the renderer-reported public theme tokens and page activity, without inspecting other app content.',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      handler: async ctx => {
+        const entry = entries.get(ctx.instanceId);
+        if (!entry) throw new Error('Camera grid instance is not open');
+        const viewer = await entry.server;
+        return { appearance: viewer.appearance() ?? null, requests: viewer.requests() };
       },
     }],
     open: async ctx => {

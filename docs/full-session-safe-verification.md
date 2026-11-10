@@ -1,5 +1,9 @@
 # Full-session safe verification after the host crash
 
+This records the original safe-only pass. The later user-approved Windows
+update, broker installation and live qualification are recorded separately in
+[Windows update qualification](windows-update-qualification.md).
+
 ## Status and scope
 
 **The concurrent native Full-session experiment is unsafe pending Windows
@@ -188,6 +192,33 @@ restoration. CSS selectors provide live updates without a polling bridge.
 The observed ordinary Browser page still exposes no tokens on either node;
 actual extension hosting remains separate from those contract tests.
 Zoom controls were not included in this original safe-verification pass.
+
+#### Subsequent native-canvas result
+
+The project now registers `camera-grid` with the same documented SDK canvas
+pattern used by the user's Agent Review and hanselprojects extensions.
+It shares the standalone viewer's loopback/capability-scoped server and adds
+75%-200% tile zoom with Auto fit. It reads existing batch files only.
+
+Actual renderer readback identified a second issue: the original CSP blocked
+the host's inline theme stylesheet with `style-src-elem`. The server now allows
+inline **style elements**, while retaining self-only scripts, connections and
+images. A real-browser regression confirms host styles apply and injected
+inline scripts remain blocked. Agent names still render through `textContent`,
+not HTML. This is not a private host bridge or a global CSP disablement.
+
+After reloading the native canvas, readback reported background token
+`#371d32`, computed background `rgb(55, 29, 50)`, foreground
+`rgb(242, 226, 241)`, the host font stack, and no CSP violations. Previously
+the fallback was `rgb(13, 17, 23)` with no token. The live host supplies theme
+tokens even when mode attributes are absent; the diagnostic therefore marks
+that as host colors and leaves an unspecified mode unknown rather than
+mislabeling the OS preference as the app mode.
+
+`get_view` returns bounded renderer-reported appearance and page-activity
+counts. The report stays in memory; no evidence files are changed. This
+observation proves actual palette integration on this app build, not just
+that a mocked token can change CSS.
 
 ### What remains unproved
 
