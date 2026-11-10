@@ -7,6 +7,12 @@ is unresolved. Offline tests/replay are not proof that the native APIs are
 safe. The installed service has deliberately not been updated by subsequent
 safe-only source work.
 
+**Post-update follow-up:** the user installed a candidate Windows fix,
+rebooted, and approved a new pinned broker package. See
+[Windows update qualification and distribution plan](../../docs/windows-update-qualification.md)
+for exact binary identities, installation, initial live evidence and remaining
+warnings. This does not retroactively change the failed crash-run verdict.
+
 Experimental code; see [the handoff](../../docs/visual-test-farm-spikes.md)
 for goals, results and the evidence contract. Not used by sandbox-mcp itself.
 
@@ -28,10 +34,12 @@ the broker package that ran the experiment.
 
 The viewer has compact fit-to-count layouts for 4/8/16 recorded image tiles
 and semantic theme-token support with system-appearance fallback. Detailed
-evidence is expandable; supplied names render as text. The built-in Browser
-canvas did not inject app theme tokens in the observed run, so app-specific
-theme mirroring remains a limitation. Layout capacity does not increase native
-session capacity; zoom is deferred.
+evidence is expandable; supplied names render as text. Host mode and semantic
+tokens are supported on either the root or body, including live token/mode
+changes and precedence over the OS theme. The observed ordinary Browser page
+currently has neither injected root nor body tokens; extension-canvas hosting
+is still being integrated. Layout capacity does not increase native session
+capacity; zoom is deferred.
 
 Requires Windows with the IsolationSession backend, .NET 10 SDK, and **Node
 24.21+ or 26.8+** (prerelease Node fails the SDK's native-stdio check).

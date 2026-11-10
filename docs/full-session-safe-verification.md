@@ -178,9 +178,16 @@ The temporary test browser/profile/server were cleaned up.
 Browser surface found no `data-color-mode` or injected background token.
 The observed dark palette therefore came from the system fallback. This
 does not prove mirroring of an independently selected Copilot app theme.
-A native extension canvas/theme bridge is a separate follow-up; no
-undocumented bridge was invented. Zoom controls are also recorded as a later
-UI task, not included in this safe-verification pass.
+That observation was initially overgeneralized as a platform limitation.
+The later comparison with Agent Review exposed missing body-level theme
+handling in our CSS. The viewer now resolves semantic aliases on both root
+and body and follows either node's `data-color-mode`, with root precedence.
+Real-browser regressions cover all four root/body mode/token combinations,
+token-only changes, app-versus-OS precedence, focus colors, and fallback
+restoration. CSS selectors provide live updates without a polling bridge.
+The observed ordinary Browser page still exposes no tokens on either node;
+actual extension hosting remains separate from those contract tests.
+Zoom controls were not included in this original safe-verification pass.
 
 ### What remains unproved
 

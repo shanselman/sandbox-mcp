@@ -305,4 +305,54 @@ test('real browser: 4/8/16 tiles, narrow viewports, token and system theme prece
   assert.equal(await evaluate('getComputedStyle(document.querySelector("a")).color'), 'rgb(101, 67, 33)');
   assert.equal(await evaluate('getComputedStyle(document.querySelector("img")).objectFit'), 'contain');
   assert.equal(await evaluate('getComputedStyle(document.querySelector("img")).filter'), 'none');
+
+  for (const [modeTarget, tokenTarget] of [['root', 'root'], ['body', 'body'], ['root', 'body'], ['body', 'root']]) {
+    await evaluate(`for (const node of [document.documentElement, document.body]) {
+      node.removeAttribute('data-color-mode');
+      node.removeAttribute('style');
+    }`);
+    await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
+    await evaluate(`(() => {
+      const mode = ${modeTarget === 'body' ? 'document.body' : 'document.documentElement'};
+      const tokens = ${tokenTarget === 'body' ? 'document.body' : 'document.documentElement'};
+      mode.dataset.colorMode = 'light';
+      for (const [name, value] of Object.entries({
+        '--background-color-default': '#faf8f5', '--text-color-default': '#24292f',
+        '--text-color-muted': '#626b75', '--border-color-default': '#c7cdd3',
+        '--color-focus-outline': '#0969da', '--font-sans': 'monospace',
+      })) tokens.style.setProperty(name, value);
+    })()`);
+    const palette = await evaluate(`(() => {
+      const style = getComputedStyle(document.body);
+      return { background: style.backgroundColor, color: style.color, scheme: style.colorScheme,
+        font: style.fontFamily, border: getComputedStyle(document.querySelector('article')).borderTopColor,
+        muted: getComputedStyle(document.querySelector('.metrics')).color };
+    })()`);
+    assert.deepEqual(palette, { background: 'rgb(250, 248, 245)', color: 'rgb(36, 41, 47)', scheme: 'light',
+      font: 'monospace', border: 'rgb(199, 205, 211)', muted: 'rgb(98, 107, 117)' },
+    `app mode on ${modeTarget} and tokens on ${tokenTarget} override the opposite OS theme`);
+    await evaluate(`document.querySelector('a').focus()`);
+    assert.equal(await evaluate('getComputedStyle(document.activeElement).outlineColor'), 'rgb(9, 105, 218)');
+    await evaluate(`(() => {
+      const mode = ${modeTarget === 'body' ? 'document.body' : 'document.documentElement'};
+      const tokens = ${tokenTarget === 'body' ? 'document.body' : 'document.documentElement'};
+      tokens.style.setProperty('--background-color-default', '#20242a');
+      mode.dataset.colorMode = 'dark';
+    })()`);
+    assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), 'rgb(32, 36, 42)');
+    assert.equal(await evaluate('getComputedStyle(document.body).colorScheme'), 'dark');
+    await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
+    assert.equal(await evaluate('getComputedStyle(document.body).colorScheme'), 'dark', 'OS changes cannot override the app');
+    await evaluate(`${tokenTarget === 'body' ? 'document.body' : 'document.documentElement'}.style.setProperty('--background-color-default', '#2b3138')`);
+    assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), 'rgb(43, 49, 56)',
+      'token-only updates apply without reloading or changing the mode');
+  }
+  await evaluate(`document.documentElement.dataset.colorMode = 'light'; document.body.dataset.colorMode = 'dark'`);
+  assert.equal(await evaluate('getComputedStyle(document.body).colorScheme'), 'light', 'root host mode takes precedence');
+  await evaluate(`for (const node of [document.documentElement, document.body]) {
+    node.removeAttribute('data-color-mode'); node.removeAttribute('style');
+  }`);
+  assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), 'rgb(255, 255, 255)', 'removing host tokens restores system fallback');
+  await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
+  assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), 'rgb(13, 17, 23)');
 });

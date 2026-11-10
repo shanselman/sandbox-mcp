@@ -7,7 +7,7 @@ using System.Security.Principal;
 // matched public-symbol/static-call-site evidence before changing this pin.
 internal sealed class LocalAgentCredential : IDisposable
 {
-    private const string InspectedCoreSha256 = "0E38ED92079D7A7F1C46C548EEE4A5FC51B43505C4BFCA5C3E019919E4E88C40";
+    private const string InspectedCoreSha256 = "91150F898562280F91EDDDDF54054AE0507191073C55B152B64B3C28F6E89D71";
     // Keep the inspected module mapped for this process. Verify under a read
     // handle before the first load, rather than racing a path replacement.
     private static readonly Lazy<IntPtr> PinnedModule = new(() =>

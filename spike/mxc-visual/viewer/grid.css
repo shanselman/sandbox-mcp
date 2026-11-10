@@ -1,5 +1,5 @@
-:root {
-  color-scheme: light dark;
+:root { color-scheme: light dark; }
+:root, body {
   /* Custom canvases supply these tokens. Ordinary browsers fall back to system appearance. */
   --canvas-bg: var(--background-color-default, light-dark(#ffffff, #0d1117));
   --canvas-fg: var(--text-color-default, light-dark(#1f2328, #e6edf3));
@@ -8,14 +8,16 @@
   --canvas-focus: var(--color-focus-outline, light-dark(#0969da, #8dbaff));
   --canvas-surface: color-mix(in srgb, var(--canvas-fg) 3%, var(--canvas-bg));
   --canvas-raised: color-mix(in srgb, var(--canvas-fg) 8%, var(--canvas-bg));
-  --canvas-danger: light-dark(#a40e26, #ffb4a8);
-  --canvas-success: light-dark(#116329, #83f2b8);
+  --canvas-danger: var(--true-color-red, light-dark(#a40e26, #ffb4a8));
+  --canvas-success: var(--true-color-green, light-dark(#116329, #83f2b8));
   font-family: var(--font-sans, system-ui, sans-serif);
   background: var(--canvas-bg);
   color: var(--canvas-fg);
 }
-:root[data-color-mode="light"] { color-scheme: light; }
-:root[data-color-mode="dark"] { color-scheme: dark; }
+:root[data-color-mode="light"],
+:root:not([data-color-mode="light"], [data-color-mode="dark"]):has(body[data-color-mode="light"]) { color-scheme: light; }
+:root[data-color-mode="dark"],
+:root:not([data-color-mode="light"], [data-color-mode="dark"]):has(body[data-color-mode="dark"]) { color-scheme: dark; }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; padding: 12px; }

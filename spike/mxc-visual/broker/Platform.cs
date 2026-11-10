@@ -7,10 +7,10 @@ internal static class Platform
 {
     private static readonly IReadOnlyDictionary<string, string> Pins = new Dictionary<string, string>
     {
-        ["wtsapi32.dll"] = "999C21B2F73212EFCD89E017DC65BA5F21D40CAF86BB921FE9692EB66E567888",
-        ["winsta.dll"] = "0480DC132339AC3F06277824A925774819994EA550BEDEABA0ECA9A0EF47AB3A",
-        ["termsrv.dll"] = "B85A40F624CC8A10A301AA55CCE2F53243E60E4D19D2A6F799E5E2E2B2601B66",
-        ["lsm.dll"] = "D132944B00F3FEEAF7AC64BBE29A2867A1B2CD36C3330478FCE09896FB441262",
+        ["wtsapi32.dll"] = "8602290CDA47C2A8E662A71DBC72418BE97593940B3898B8DF774AB8AC919C68",
+        ["winsta.dll"] = "F1AA026EAD78F39E0E53963B62D43CC04C7FCF2A84B73AB955C05A94C11BF653",
+        ["termsrv.dll"] = "C5F591EF4BE4A3076FD3CB03F6729AB858DD1D0B153988D68879BC1C44F3EAF0",
+        ["lsm.dll"] = "87C99331E534D8B865C33D8BD7B8B046F60CB57672DFBD0D7DAE7740C6FB12C6",
     };
     public static void Check()
     {
@@ -66,6 +66,6 @@ internal static class Platform
             return new(false, "experimental_build_not_validated",
                 "The APIs exist, but these Windows binaries differ from the validated experimental build. Update Windows normally, then obtain a broker release validated for that build; do not remove the ABI pins or downgrade system DLLs.",
                 architecture, windows, missing, changed);
-        return new(true, "validated", "Experimental APIs and validated build pins are present. This is not a stable Windows API contract.", architecture, windows, missing, changed);
+        return new(true, "validated", "Experimental APIs and inspected build pins are present. This is not a stable Windows API contract or proof of native lifecycle safety.", architecture, windows, missing, changed);
     }
 }
