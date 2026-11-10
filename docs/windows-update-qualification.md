@@ -129,6 +129,39 @@ reported the actual app palette with no CSP violations. This was current
 capture evidence, not replay. On completion the same viewer switches to
 recorded-state labels.
 
+### Completed qualification and final client gate
+
+The 30-grid qualification completed, followed by one additional single stream
+and one additional three-session grid exercising the final client-side
+every-image verification gate. The final total is **31 successful grids plus
+three single-session runs: 96 distinct agent/session lifecycles**.
+
+All **2,790 grid-stream PNGs** and 60 single-stream PNGs were validated
+(**2,850 stream images total**). Grid overlap ranged from **27,388 to
+28,966 ms**; the worst interval was **1,240 ms**, without lowering any
+acceptance threshold. Independent inventory confirmed all 96 agent accounts
+and profiles absent. Only the original services/console sessions remained;
+the broker was ready with no pending work. All 537 installed files still
+matched the approved package. The boot time was unchanged.
+
+Both single-stream and coordinated client paths now validate every preserved
+PNG after cleanup, with expected-session binding, geometry/CRC/scanline checks,
+and explicit failure for missing, corrupt or redirected files. This is part
+of the normal verdict, not just an external audit. Distinct image hashes are
+reported as encodings, not misrepresented as proof of a semantic UI change;
+the existing UIA assertions and visual review remain necessary.
+
+The final offline suite passed **101 C# checks and 48 Node tests** in three
+runs. The installed native package did not need another update for this
+ordinary-user client change.
+
+Remaining shell warnings were investigated separately:
+[Explorer/ShellHost dump diagnosis and repository-level repro](shell-startup-crash-repro.md).
+The qualification demonstrates this bounded fixture workload on this host,
+not universal Windows stability, true monitor-DPI variants, more than three
+simultaneous native sessions, long-lived desktop soak, or a supported public
+Windows API contract.
+
 ## What happens when Windows updates today
 
 1. The broker compares required exports, architecture and exact module hashes

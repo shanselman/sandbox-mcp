@@ -8,7 +8,8 @@ import { once } from 'node:events';
 import { provisionContainer, deprovisionContainer } from '@microsoft/mxc-sdk/v1';
 import { ISO_REQUEST } from './session.mjs';
 import { atomicJson, readRecord, mergePending, copyEvidence, verifyVisualEvidence, recoverIndependent } from './broker-client-state.mjs';
-import { startLiveCollector, summarizeStream, requireFreshLiveOutput } from './live-evidence.mjs';
+import { startLiveCollector, requireFreshLiveOutput } from './live-evidence.mjs';
+import { verifyStreamEvidence } from './stream-evidence.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const install = path.join(process.env.ProgramW6432 ?? process.env.ProgramFiles, 'SandboxMcpFullBroker');
@@ -182,7 +183,7 @@ async function runGrid(root, status) {
     const visual = verifyVisualEvidence(directory, result.report.sessionId, record.metadata.agentUserName);
     const raw = JSON.parse(fs.readFileSync(path.join(directory, 'stream.json'), 'utf8'));
     const fixture = JSON.parse(fs.readFileSync(path.join(directory, 'fixture-settings.json'), 'utf8'));
-    const stream = summarizeStream(raw, fixture, record.variant);
+    const stream = verifyStreamEvidence(directory, raw, fixture, record.variant, result.report.sessionId);
     if (!stream.cadenceMet) failure ??= new Error('At least one live stream missed the cadence threshold');
     runs.push({ variant: record.variant, response: result, visual, stream, cleanup: cleanup.find(item => item.id === record.id),
       observedFrames: progress.find(item => item.id === record.id)?.observedFrames,
@@ -253,8 +254,8 @@ try {
     let stream;
     if (!failure && variant) {
       const evidence = path.join(here, 'evidence', `broker-${record.id}`, 'visual');
-      stream = summarizeStream(JSON.parse(fs.readFileSync(path.join(evidence, 'stream.json'), 'utf8')),
-        JSON.parse(fs.readFileSync(path.join(evidence, 'fixture-settings.json'), 'utf8')), variant);
+      stream = verifyStreamEvidence(evidence, JSON.parse(fs.readFileSync(path.join(evidence, 'stream.json'), 'utf8')),
+        JSON.parse(fs.readFileSync(path.join(evidence, 'fixture-settings.json'), 'utf8')), variant, response.report.sessionId);
       if (!stream.cadenceMet) failure = new Error('Measured stream did not meet the 1fps tolerance');
     }
     console.log(JSON.stringify({ response, cleanup, visual, stream, live }, null, 2));
