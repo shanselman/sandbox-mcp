@@ -42,6 +42,63 @@ Matching Microsoft public symbols were used locally. This is a diagnosis of
 the observed failure sites and reported errors, **not** a proved causal link
 between the two application failures or to the earlier CSRSS host bugcheck.
 
+## Follow-up: why Explorer itself can fail on package initialization
+
+Further read-only inspection of the same dumps narrowed the failure sites:
+
+- In `CTray::Init`, the branch to the observed `FailFast_Unexpected` follows
+  `XamlExtensions::IsExtensionAvailable` for
+  `WindowsUdk.UI.Shell.TaskbarControllerExtension` and `Taskbar`. The
+  fail-fast is the false branch of that availability check. This is Explorer
+  checking one of its own shell/XAML extensions, not a fault in HelloWinUI.
+- In `LoadWinUIFrameworkPackage`, the captured import resolves to
+  `kernel_appcore!AddDependencyToProcessPackageGraph`, and the package-family
+  argument is `Microsoft.UI.Xaml.CBS_8wekyb3d8bbwe`. Its retry loop eventually
+  reports the observed `0x80073D54` and fails fast. This more precisely locates
+  the package-graph failure; it does not by itself prove why the API returned
+  that error.
+
+The strongest public comparison is
+[Microsoft KB5072911: Explorer, the Start menu, and other XAML-dependent apps might not start or close unexpectedly](https://support.microsoft.com/en-us/servicing/os/windows/docs/2025/11/kb5072911-explorer-the-start-menu-and-other-xaml-dependent-apps-might-not-start-or-close-unexpectedl).
+It explicitly names both Explorer and ShellHost, first-time user logon and
+non-persistent/VDI environments, and Windows XAML dependencies that fail to
+register in time after servicing. The listed packages are
+`MicrosoftWindows.Client.CBS`, `Microsoft.UI.Xaml.CBS`, and
+`MicrosoftWindows.Client.Core`. Its workaround discusses registration in the
+affected user session before Explorer starts.
+
+**Important scope limit:** that article covers Windows 11 24H2/25H2 and says
+the documented issue was addressed starting with June 2026 updates. Our
+experiment uses the different 28000 build line. This is a close, authoritative
+failure-mechanism comparison, not proof the same servicing bug exists here or
+that its workaround is appropriate for experimental agent accounts.
+
+Bounded GitHub searches did not find an exact independent report of this
+experimental Full-session failure:
+
+- [microsoft/microsoft-ui-xaml#3990](https://github.com/microsoft/microsoft-ui-xaml/issues/3990)
+  (The process has no package identity - Error in XAML Islands): a related
+  package-identity error in a custom XAML Islands app, not this ShellHost
+  failure. Public search excerpts were available; authenticated detail reads
+  were blocked by organization SAML enforcement.
+- [valinet/ExplorerPatcher#2097](https://github.com/valinet/ExplorerPatcher/pull/2097)
+  (Taskbar10: Try to make fixes for 22621.2134+): taskbar patching compatibility
+  work, not evidence that our fresh, unmodified agent sessions have that cause.
+
+The leading hypothesis is now **Windows shell package registration,
+activation or package-graph readiness in the disposable user context**.
+Developer Mode is a different mechanism: the documented device-wide
+`AllowDevelopmentWithoutDevLicense` flag was already 1. Our fixture is
+intentionally unpackaged/self-contained and does not deploy Explorer or
+ShellHost.
+
+A decisive follow-up should compare a Full session with no fixture against
+the fixture run and observe the affected agent's package/extension state
+before shell initialization. The accounts from this run were already
+deprovisioned, so querying their registrations afterward would not establish
+what existed at failure time. No AppX re-registration, shell restart, policy
+change or additional live session was performed for this research.
+
 ## Repository-level reproduction
 
 This is the existing exercised harness, not a dependency-free minimal native
