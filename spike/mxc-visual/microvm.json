@@ -1,0 +1,11 @@
+{
+  "version": "1.1.0-alpha",
+  "containment": "microvm",
+  "microvm": {
+    "image": "mcr.microsoft.com/azurelinux/base/core:3.0"
+  },
+  "process": {
+    "commandLine": "printf 'MXC microvm smoke\\n'; uname -a",
+    "timeout": 30000
+  }
+}
