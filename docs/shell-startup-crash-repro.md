@@ -99,6 +99,23 @@ deprovisioned, so querying their registrations afterward would not establish
 what existed at failure time. No AppX re-registration, shell restart, policy
 change or additional live session was performed for this research.
 
+### Deferred engineer suggestion: explicit InitialProgram
+
+On 2026-11-10, the user relayed this engineer suggestion verbatim:
+
+> "If you pass in a program for initialprogram"
+
+**Deferred at the user's explicit request; do not implement or run it now.**
+For a later controlled experiment, compare the current null `InitialProgram`
+with an explicitly selected program and observe whether shell startup and the
+Explorer/ShellHost failures change. The program and expected behavior have
+not yet been specified; this is a lead, not a confirmed workaround.
+
+Before that future experiment, recheck the initial-program allowlist documented
+in the main spike handoff (previously defaulting to `%SystemRoot%\System32`),
+alongside the current build pins and normal ownership/cleanup safeguards.
+This note does not authorize an allowlist change, service update or live run.
+
 ## Repository-level reproduction
 
 This is the existing exercised harness, not a dependency-free minimal native
