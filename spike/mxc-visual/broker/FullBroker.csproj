@@ -8,5 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\headless\LocalAgentCredential.cs" Link="LocalAgentCredential.cs" />
+    <Compile Include="..\EvidencePublication.cs" Link="EvidencePublication.cs" />
   </ItemGroup>
 </Project>

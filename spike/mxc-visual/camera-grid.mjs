@@ -5,11 +5,13 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { atomicJson } from './broker-client-state.mjs';
 import { readProgress, readBatch } from './live-evidence.mjs';
+import { cameraState, replayState } from './viewer-state.mjs';
 
 const root = path.resolve(process.argv[2] ?? '');
 if (process.argv.length !== 3 || !fs.existsSync(path.join(root, 'batch.json'))) throw new Error('Expected a prepared batch directory');
 const here = path.dirname(fileURLToPath(import.meta.url));
 const token = randomBytes(24).toString('hex');
+const playbackStartedAt = Date.now();
 let origin;
 const server = http.createServer((request, response) => {
   const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
@@ -28,16 +30,14 @@ const server = http.createServer((request, response) => {
       return send(200, relative.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8', fs.readFileSync(path.join(here, 'viewer', relative)));
     if (relative === 'state') {
       const batch = readBatch(root);
+      if (batch.mode === 'replay') {
+        const replay = replayState(batch, Date.now(), playbackStartedAt);
+        return send(200, 'application/json', JSON.stringify({ ...replay, serverTime: new Date().toISOString() }));
+      }
       const runs = batch.runs.map(run => {
         if (!['light', 'dark', 'dark-large'].includes(run.variant)) throw new Error('Unexpected variant');
         const progress = readProgress(path.join(root, run.variant));
-        const frame = progress?.frame;
-        const ageMs = frame ? Date.now() - Date.parse(frame.at) : null;
-        const completed = ['passed', 'failed', 'skipped'].includes(run.state) || ['complete', 'failed'].includes(progress?.state);
-        const state = completed ? (run.state === 'starting' ? 'complete' : run.state)
-          : frame && ageMs > 2500 ? 'stale' : progress?.state ?? run.state;
-        return { ...run, progress, state, ageMs,
-          image: frame?.file && /^frame-\d{3}\.png$/.test(frame.file) ? `${run.variant}/${frame.file}` : null };
+        return cameraState(batch, run, progress, Date.now());
       });
       return send(200, 'application/json', JSON.stringify({ ...batch, runs, serverTime: new Date().toISOString() }));
     }

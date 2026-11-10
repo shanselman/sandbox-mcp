@@ -3,6 +3,13 @@
 Research date: 2026-11-09. Branch: `sandbox-multiplexer`.
 Starting repository revision: `1c9adfc` (sandbox-mcp 1.2.0).
 
+**Latest safety status:** the third concurrent experiment ended in a host
+bugcheck (`0xEF`, CSRSS terminated by SMSS). Exact causality is unresolved.
+The user deferred further live testing and sent the dump to Windows
+engineers. See [the safe-only verification findings](full-session-safe-verification.md)
+and [Proxmox reference learnings](proxmox-reference-learnings.md). Earlier
+successful milestones below are historical evidence, not a safety clearance.
+
 **Status (updated 2026-11-09, Windows ARM64): changing WinUI client pixels are
 now verified in a WTS Full session, using an in-session helper and PrintWindow
 flag 2. An owner-only broker is now installed under protected Program Files

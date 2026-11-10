@@ -190,8 +190,7 @@ static class Program
                     finally { graphics.ReleaseHdc(dc); }
                 }
                 string path = Path.Combine(output, name);
-                bitmap.Save(path + ".tmp", ImageFormat.Png);
-                File.Move(path + ".tmp", path);
+                EvidencePublication.PublishNew(path, stream => bitmap.Save(stream, ImageFormat.Png));
                 var frame = new { sequence, at = DateTimeOffset.UtcNow, elapsedMs = timer.ElapsedMilliseconds,
                     captureMs = timer.ElapsedMilliseconds - start, scheduledMs = sequence * 1000, file = name,
                     sessionId = target.SessionId, pid, width, height, actualWindowDpi = GetDpiForWindow(hwnd), error = (string?)null };
@@ -210,7 +209,8 @@ static class Program
         report["frames"] = frames;
         report["targetFps"] = 1;
         report["failedFrames"] = failures;
-        File.WriteAllText(Path.Combine(output, "stream.json"), JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+        EvidencePublication.PublishNew(Path.Combine(output, "stream.json"),
+            stream => JsonSerializer.Serialize(stream, report, new JsonSerializerOptions { WriteIndented = true }));
         if (failures != 0) throw new InvalidOperationException($"{failures} capture frames failed");
     }
 
@@ -219,8 +219,7 @@ static class Program
         // Immutable metadata avoids replacing a cross-account file while a
         // collector has it open; publication is a rename to a new name.
         string path = Path.Combine(output, $"frame-meta-{sequence:D3}.json");
-        File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(frame));
-        File.Move(path + ".tmp", path);
+        EvidencePublication.PublishNew(path, stream => JsonSerializer.Serialize(stream, frame));
     }
 
     [DllImport("user32.dll")]
@@ -237,7 +236,7 @@ static class Program
             d["size"] = $"{bmp.Width}x{bmp.Height}";
             d["stats"] = Stats(bmp);
             var path = Path.Combine(outDir, $"{label}-{method}.png");
-            bmp.Save(path, ImageFormat.Png);
+            EvidencePublication.PublishNew(path, stream => bmp.Save(stream, ImageFormat.Png));
             d["png"] = path;
         }
         catch (Exception e) { d["ms"] = sw.ElapsedMilliseconds; d["error"] = e.Message; }

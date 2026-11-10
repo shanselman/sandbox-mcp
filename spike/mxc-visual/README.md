@@ -1,14 +1,37 @@
 # MXC IsolationSession visual spike
 
+**HOST-CRASH WARNING:** the third concurrent Full-session run ended in
+`0xEF CRITICAL_PROCESS_DIED` after its workers finished. Do not run these live
+experiments on a primary machine while the Windows lifecycle investigation
+is unresolved. Offline tests/replay are not proof that the native APIs are
+safe. The installed service has deliberately not been updated by subsequent
+safe-only source work.
+
 Experimental code; see [the handoff](../../docs/visual-test-farm-spikes.md)
 for goals, results and the evidence contract. Not used by sandbox-mcp itself.
 
-**Current outcome:** an owner-only broker is installed and two ordinary-user
+**Earlier single-session outcome:** an owner-only broker was installed and two ordinary-user
 runs produced changing WinUI pixels without per-run UAC. Start with
 [the installed broker](#owner-only-installed-broker-experimental) and
 [its host validation](#installed-host-validation-2026-11-09). The earlier
 sections below preserve the experiments in chronological order, including
 failures that the later System-context path resolved.
+
+Read [the Proxmox reference learnings](../../docs/proxmox-reference-learnings.md)
+for source-verified lifecycle/capture ideas and limitations; no upstream code
+was copied.
+
+**Safe work after the crash:** [offline lifecycle tests, replay and findings](../../docs/full-session-safe-verification.md).
+The replay uses copies of preserved images only and explicitly retains the
+failed source-run verdict. Source-only hardening has not been installed over
+the broker package that ran the experiment.
+
+The viewer has compact fit-to-count layouts for 4/8/16 recorded image tiles
+and semantic theme-token support with system-appearance fallback. Detailed
+evidence is expandable; supplied names render as text. The built-in Browser
+canvas did not inject app theme tokens in the observed run, so app-specific
+theme mirroring remains a limitation. Layout capacity does not increase native
+session capacity; zoom is deferred.
 
 Requires Windows with the IsolationSession backend, .NET 10 SDK, and **Node
 24.21+ or 26.8+** (prerelease Node fails the SDK's native-stdio check).

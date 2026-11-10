@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { requireId, atomicJson, readRecord, mergePending, copyEvidence, verifyVisualEvidence, recoverIndependent } from '../broker-client-state.mjs';
+import { pngFixture } from './png-fixture.mjs';
 
 const id = '0123456789abcdef0123456789abcdef';
 const metadata = { agentUserName: 'A1-B2', agentUserSid: 'S-1-5-21-1-2-3-1001' };
@@ -75,13 +76,7 @@ test('capture assertions bind the user, session, denied agent IPC and changed im
   fs.writeFileSync(path.join(root, 'worker.json'), JSON.stringify(worker));
   fs.writeFileSync(path.join(root, 'authorization.json'), JSON.stringify({ sessionId: 14, nonOwnerPipeAccessDenied: true }));
   for (const [label, marker] of [['1-before', 1], ['2-after', 2]]) {
-    // Synthetic headers exercise the verifier, not a claim about rendered pixels.
-    const bytes = Buffer.alloc(32);
-    Buffer.from('89504e470d0a1a0a', 'hex').copy(bytes);
-    bytes.write('IHDR', 12);
-    bytes.writeUInt32BE(520, 16);
-    bytes.writeUInt32BE(400, 20);
-    bytes[31] = marker;
+    const bytes = pngFixture(marker, 520, 400);
     fs.writeFileSync(path.join(root, `${label}-printwindow-2.png`), bytes);
   }
   assert.equal(verifyVisualEvidence(root, 14, 'A1-B2').pixelReviewRequired, true);

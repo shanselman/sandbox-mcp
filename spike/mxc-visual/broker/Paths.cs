@@ -140,9 +140,12 @@ internal static class Paths
         if (lease.Request.Id != id) throw new InvalidDataException("Lease identity mismatch");
         Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(lease.Request, Protocol.Json));
         Protocol.RequireId(lease.OutputKey);
-        if (lease.Request.Operation != "run-fixture" || lease.Phase is not ("creating" or "running" or "finished" or "recovery-required")
+        if (lease.Request.Operation != "run-fixture" || lease.Phase is not ("creating" or "running" or "stopping" or "finished" or "recovery-required")
             || lease.Baseline.Length > 4096 || lease.Baseline.Any(value => value < 0))
             throw new InvalidDataException("Invalid lease state");
+        if (lease.CleanupSessionId is not null && (lease.CleanupSessionId <= 1 || lease.Baseline.Contains(lease.CleanupSessionId.Value)
+            || lease.CleanupStartedAt is null || lease.SessionId is not null && lease.SessionId != lease.CleanupSessionId))
+            throw new InvalidDataException("Invalid cleanup identity");
         return lease;
     }
     public static Lease[] Leases()

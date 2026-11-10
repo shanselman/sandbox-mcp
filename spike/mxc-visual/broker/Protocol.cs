@@ -15,7 +15,7 @@ internal sealed record GridMember(string Id, string AgentName, string AgentSid, 
 internal sealed record Configuration(int Schema, string OwnerSid, string Release);
 internal sealed record Lease(Request Request, string OutputKey, int[] Baseline,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] int? SessionId, string Phase,
-    DateTimeOffset Created, JsonElement? Result = null);
+    DateTimeOffset Created, JsonElement? Result = null, int? CleanupSessionId = null, DateTimeOffset? CleanupStartedAt = null);
 
 internal static class Protocol
 {

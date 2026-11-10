@@ -143,6 +143,7 @@ internal static class SelfTest
             {
                 attempted.Add(item.Request.Id!);
                 if (item.Request.Id == group[0].Request.Id) throw new IOException("Synthetic stop failure");
+                return item;
             }, saved.Add);
             if (attempted.Count != 3 || saved.Count != 2 || saved.Any(item => item.Phase != "finished") || errors.Length != 1)
                 throw new Exception("Independent recovery was not attempted for every member");
@@ -201,7 +202,59 @@ internal static class SelfTest
             catch (InvalidOperationException) { return; }
             throw new Exception("Uninstall ignored client-only state");
         });
-        Console.WriteLine(JsonSerializer.Serialize(new { passed, failures }, Protocol.Json));
+        FileCase("100 immutable publications succeed while prior snapshots are held without delete sharing", root =>
+        {
+            var readers = new List<FileStream>();
+            try
+            {
+                for (int i = 0; i < 100; i++)
+                {
+                    string path = Path.Combine(root, $"snapshot-{i:D3}.json");
+                    EvidencePublication.PublishNew(path, stream => JsonSerializer.Serialize(stream, new { sequence = i }));
+                    readers.Add(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read));
+                    using var document = JsonDocument.Parse(File.ReadAllText(path));
+                    if (document.RootElement.GetProperty("sequence").GetInt32() != i) throw new Exception("Torn snapshot");
+                }
+                string first = Path.Combine(root, "snapshot-000.json");
+                File.WriteAllText(first + ".tmp", "{}");
+                try { File.Move(first + ".tmp", first, true); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return; }
+                throw new Exception("Negative replacement control did not reproduce a sharing refusal");
+            }
+            finally { foreach (var reader in readers) reader.Dispose(); }
+        });
+        FileCase("durable evidence rejects duplicates without changing prior bytes", root =>
+        {
+            string path = Path.Combine(root, "frame.json");
+            EvidencePublication.PublishNew(path, stream => stream.Write([1, 2, 3]));
+            try { EvidencePublication.PublishNew(path, stream => stream.Write([4, 5, 6])); }
+            catch (IOException)
+            {
+                if (!File.ReadAllBytes(path).SequenceEqual(new byte[] { 1, 2, 3 })
+                    || Directory.GetFiles(root).Length != 1) throw new Exception("Prior evidence changed or temporary leaked");
+                return;
+            }
+            throw new Exception("Duplicate publication succeeded");
+        });
+        FileCase("failed evidence serialization publishes nothing and leaves no temporary", root =>
+        {
+            try
+            {
+                EvidencePublication.PublishNew(Path.Combine(root, "frame.json"), stream =>
+                {
+                    stream.WriteByte(1);
+                    throw new InvalidDataException("Synthetic serializer failure");
+                });
+            }
+            catch (InvalidDataException)
+            {
+                if (Directory.GetFiles(root).Length != 0) throw new Exception("Partial evidence escaped");
+                return;
+            }
+            throw new Exception("Failure was suppressed");
+        });
+        LifecycleTests.Register(Check);
+        Console.WriteLine(JsonSerializer.Serialize(new { passed, failures, nativeLifecycleInvoked = false }, Protocol.Json));
         return failures.Count == 0 ? 0 : 1;
     }
 }

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
+import { validatePng } from './png-evidence.mjs';
 
 export function requireId(id) {
   if (typeof id !== 'string' || !/^[a-f0-9]{32}$/.test(id)) throw new Error('Invalid request ID');
@@ -102,6 +103,7 @@ export function verifyVisualEvidence(directory, sessionId, agentName) {
     const bytes = fs.readFileSync(path.join(directory, `${label}-printwindow-2.png`));
     if (bytes.length < 24 || bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a'
       || bytes.subarray(12, 16).toString('ascii') !== 'IHDR') throw new Error('Expected PNG evidence is missing or malformed');
+    validatePng(bytes, { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) });
     return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20), hash: createHash('sha256').update(bytes).digest('hex') };
   });
   if (!images[0].width || !images[0].height || images[0].width !== images[1].width

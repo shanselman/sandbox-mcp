@@ -2,6 +2,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { atomicJson } from './broker-client-state.mjs';
+import { validatePng } from './png-evidence.mjs';
+export { validatePng } from './png-evidence.mjs';
+
+export function validateFrame(frame) {
+  if (!frame || !Number.isInteger(frame.sequence) || frame.sequence < 0 || frame.sequence >= 30
+    || !Number.isInteger(frame.sessionId) || frame.sessionId <= 1
+    || !Number.isInteger(frame.pid) || frame.pid <= 0 || !Number.isFinite(Date.parse(frame.at))
+    || !Number.isFinite(frame.elapsedMs) || frame.elapsedMs < 0)
+    throw new Error('Invalid frame metadata');
+  if (frame.error) return;
+  if (!Number.isInteger(frame.width) || !Number.isInteger(frame.height) || frame.width <= 0 || frame.height <= 0
+    || frame.width * frame.height > 16000000 || !Number.isFinite(frame.actualWindowDpi) || frame.actualWindowDpi <= 0
+    || !Number.isFinite(frame.captureMs) || frame.captureMs < 0 || frame.captureMs > frame.elapsedMs)
+    throw new Error('Invalid frame geometry/timing');
+  if (frame.file !== `frame-${String(frame.sequence).padStart(3, '0')}.png`) throw new Error('Invalid frame file');
+}
 
 export function readFrame(workspace, destination, observed, now = Date.now()) {
   const directories = fs.readdirSync(workspace).filter(name => /^broker-[a-f0-9]{32}$/.test(name));
@@ -14,21 +30,24 @@ export function readFrame(workspace, destination, observed, now = Date.now()) {
   if (!fs.existsSync(status)) return null;
   if (fs.lstatSync(status).isSymbolicLink() || fs.statSync(status).size > 16384) throw new Error('Invalid live metadata');
   const frame = JSON.parse(fs.readFileSync(status, 'utf8'));
-  if (!Number.isInteger(frame.sequence) || frame.sequence < 0 || frame.sequence >= 30
-    || !Number.isInteger(frame.sessionId) || frame.sessionId <= 0 || !Number.isFinite(Date.parse(frame.at)))
-    throw new Error('Invalid frame metadata');
+  validateFrame(frame);
+  if (Date.parse(frame.at) > now + 5000) throw new Error('Frame clock is in the future');
   if (metadataFiles.length && path.basename(status) !== `frame-meta-${String(frame.sequence).padStart(3, '0')}.json`)
     throw new Error('Frame sequence does not match immutable metadata');
-  if (observed.sessionId && observed.sessionId !== frame.sessionId) throw new Error('Live session identity changed');
+  if (observed.sessionId && (observed.sessionId !== frame.sessionId || observed.pid !== frame.pid))
+    throw new Error('Live session/process identity changed');
   observed.sessionId = frame.sessionId;
+  observed.pid = frame.pid;
   if (frame.error) return { ...frame, receivedAt: new Date(now).toISOString(), error: String(frame.error).slice(0, 1000) };
-  if (!/^frame-\d{3}\.png$/.test(frame.file) || frame.file !== `frame-${String(frame.sequence).padStart(3, '0')}.png`)
-    throw new Error('Invalid frame file');
   const image = path.join(source, frame.file);
   const stat = fs.lstatSync(image);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 16 * 1024 * 1024) throw new Error('Invalid live image');
   const bytes = fs.readFileSync(image);
-  if (bytes.length < 24 || bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new Error('Invalid PNG');
+  validatePng(bytes, frame);
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  const previous = observed.sequences.get(frame.sequence);
+  if (previous && (previous.hash !== hash || previous.at !== frame.at || previous.elapsedMs !== frame.elapsedMs))
+    throw new Error('Immutable frame changed after publication');
   fs.mkdirSync(destination, { recursive: true });
   const target = path.join(destination, frame.file);
   if (fs.existsSync(target)) {
@@ -46,9 +65,9 @@ export function readFrame(workspace, destination, observed, now = Date.now()) {
     if (fs.lstatSync(settings).isSymbolicLink() || fs.statSync(settings).size > 16384) throw new Error('Invalid fixture settings');
     fixture = JSON.parse(fs.readFileSync(settings, 'utf8'));
   }
-  if (!observed.sequences.has(frame.sequence)) observed.sequences.set(frame.sequence, { ...frame, receivedAt: new Date(now).toISOString() });
+  if (!previous) observed.sequences.set(frame.sequence, { ...frame, hash, receivedAt: new Date(now).toISOString() });
   return { ...frame, receivedAt: observed.sequences.get(frame.sequence).receivedAt,
-    hash: createHash('sha256').update(bytes).digest('hex'), fixture };
+    hash, fixture };
 }
 
 export function requireFreshLiveOutput(destination) {
@@ -116,16 +135,23 @@ export function startLiveCollector(workspace, destination, initial) {
 export function summarizeStream(stream, fixture, expectedVariant) {
   if (!stream || !Array.isArray(stream.frames) || stream.targetFps !== 1) throw new Error('Missing stream report');
   const frames = stream.frames;
+  frames.forEach(validateFrame);
   const good = frames.filter(frame => !frame.error);
-  if (frames.length !== 30 || good.length !== 30 || new Set(good.map(frame => frame.sequence)).size !== 30)
+  if (frames.length !== 30 || good.length !== 30 || good.some((frame, i) => frame.sequence !== i))
     throw new Error('The run did not capture all 30 distinct requested frames');
+  if (new Set(good.map(frame => frame.sessionId)).size !== 1 || new Set(good.map(frame => frame.pid)).size !== 1)
+    throw new Error('Stream mixes different sessions/processes');
   const expectedTheme = expectedVariant === 'light' ? 'Light' : 'Dark';
   const expectedScale = expectedVariant === 'dark-large' ? 1.5 : 1;
   if (fixture?.variant !== expectedVariant || fixture.theme !== expectedTheme
-    || fixture.fixtureLayoutScale !== expectedScale || fixture.actualWindowDpi <= 0 || fixture.dpiWasChanged !== false)
+    || fixture.fixtureLayoutScale !== expectedScale || !Number.isFinite(fixture.actualWindowDpi) || fixture.actualWindowDpi <= 0
+    || !Number.isFinite(fixture.rasterizationScale) || fixture.rasterizationScale <= 0 || fixture.dpiWasChanged !== false
+    || fixture.scaleIsSimulation !== (expectedScale !== 1) || good.some(frame => frame.actualWindowDpi !== fixture.actualWindowDpi))
     throw new Error('Measured fixture settings differ from requested variant');
   const intervals = good.slice(1).map((frame, i) => frame.elapsedMs - good[i].elapsedMs);
   if (intervals.some(value => value <= 0)) throw new Error('Frame clock is not monotonic');
+  if (good.slice(1).some((frame, i) => Date.parse(frame.at) <= Date.parse(good[i].at)))
+    throw new Error('Recorded capture timestamps are not monotonic');
   const sorted = [...intervals].sort((a, b) => a - b);
   const span = good.at(-1).elapsedMs - good[0].elapsedMs;
   const fps = 29 * 1000 / span;

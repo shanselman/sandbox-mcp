@@ -8,4 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\EvidencePublication.cs" Link="EvidencePublication.cs" />
+  </ItemGroup>
 </Project>
