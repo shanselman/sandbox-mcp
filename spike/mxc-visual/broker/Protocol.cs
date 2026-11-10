@@ -7,7 +7,11 @@ using System.Text.RegularExpressions;
 namespace SandboxMcp.FullBroker;
 
 internal sealed record Request(int Protocol, string Operation, string? Id = null, string? AgentName = null,
-    string? AgentSid = null, string? ContainerId = null);
+    string? AgentSid = null, string? ContainerId = null, string? Variant = null, GridMember[]? Members = null);
+internal sealed record GridMember(string Id, string AgentName, string AgentSid, string ContainerId, string Variant)
+{
+    public Request AsRequest() => new(1, "run-fixture", Id, AgentName, AgentSid, ContainerId, Variant);
+}
 internal sealed record Configuration(int Schema, string OwnerSid, string Release);
 internal sealed record Lease(Request Request, string OutputKey, int[] Baseline,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] int? SessionId, string Phase,
@@ -32,23 +36,39 @@ internal static class Protocol
         if (bytes.Length is 0 or > RequestLimit) throw new InvalidDataException("Invalid request length");
         using var document = JsonDocument.Parse(bytes, new JsonDocumentOptions { MaxDepth = 8 });
         if (document.RootElement.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Expected a request object");
-        var properties = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var property in document.RootElement.EnumerateObject())
-            if (!properties.Add(property.Name)) throw new InvalidDataException("Duplicate request property");
+        RejectDuplicates(document.RootElement);
+        var properties = document.RootElement.EnumerateObject().Select(property => property.Name).ToHashSet(StringComparer.Ordinal);
         var request = JsonSerializer.Deserialize<Request>(bytes, Json) ?? throw new InvalidDataException("Empty request");
         if (request.Protocol != 1) throw new InvalidDataException("Unsupported protocol");
         string[] allowed = request.Operation switch
         {
             "status" or "recover" => ["protocol", "operation"],
             "result" or "ack" => ["protocol", "operation", "id"],
-            "run-fixture" => ["protocol", "operation", "id", "agentName", "agentSid", "containerId"],
+            "run-fixture" => ["protocol", "operation", "id", "agentName", "agentSid", "containerId", "variant"],
+            "run-grid" => ["protocol", "operation", "members"],
             _ => throw new InvalidDataException("Unsupported operation")
         };
         if (properties.Any(property => !allowed.Contains(property, StringComparer.Ordinal)))
             throw new InvalidDataException("Unexpected operation field");
+        if (request.Operation == "run-grid")
+        {
+            if (request.Members is not { Length: 3 }) throw new InvalidDataException("Grid requires exactly three fixed variants");
+            foreach (var member in request.Members)
+            {
+                if (member is null) throw new InvalidDataException("Missing grid member");
+                Parse(JsonSerializer.SerializeToUtf8Bytes(member.AsRequest(), Json));
+            }
+            if (request.Members.Select(member => member.Id).Distinct().Count() != 3
+                || request.Members.Select(member => member.AgentSid).Distinct().Count() != 3
+                || request.Members.Select(member => member.AgentName).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 3
+                || !request.Members.Select(member => member.Variant).ToHashSet().SetEquals(["light", "dark", "dark-large"]))
+                throw new InvalidDataException("Grid member identities and variants must be unique");
+        }
         if (request.Operation is "run-fixture" or "result" or "ack") RequireId(request.Id);
         if (request.Operation == "run-fixture")
         {
+            if (request.Variant is not (null or "light" or "dark" or "dark-large"))
+                throw new InvalidDataException("Unsupported fixed fixture variant");
             if (request.AgentName is null || !Regex.IsMatch(request.AgentName, "^[A-Za-z0-9][A-Za-z0-9-]{0,31}$"))
                 throw new InvalidDataException("Invalid agent name");
             if (request.AgentSid is null || request.AgentSid.Length > 184)
@@ -59,6 +79,21 @@ internal static class Protocol
                 throw new InvalidDataException("Invalid opaque container ID");
         }
         return request;
+    }
+
+    private static void RejectDuplicates(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var property in element.EnumerateObject())
+            {
+                if (!names.Add(property.Name)) throw new InvalidDataException("Duplicate request property");
+                RejectDuplicates(property.Value);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+            foreach (var child in element.EnumerateArray()) RejectDuplicates(child);
     }
 
     public static void RequireId(string? id)

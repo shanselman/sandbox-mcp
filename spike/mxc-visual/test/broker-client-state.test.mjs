@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { requireId, atomicJson, readRecord, mergePending, copyEvidence, verifyVisualEvidence } from '../broker-client-state.mjs';
+import { requireId, atomicJson, readRecord, mergePending, copyEvidence, verifyVisualEvidence, recoverIndependent } from '../broker-client-state.mjs';
 
 const id = '0123456789abcdef0123456789abcdef';
 const metadata = { agentUserName: 'A1-B2', agentUserSid: 'S-1-5-21-1-2-3-1001' };
@@ -96,4 +96,16 @@ test('evidence copy rejects a directory junction', t => {
   fs.mkdirSync(workspace);
   fs.symlinkSync(target, path.join(workspace, `broker-${id}`), process.platform === 'win32' ? 'junction' : 'dir');
   assert.throws(() => copyEvidence(workspace, id, path.join(root, 'evidence')), /reparse/);
+});
+test('one uncertain provisioning outcome does not strand identified sibling accounts', async () => {
+  const attempted = [];
+  const result = await recoverIndependent([{ id: 'uncertain' }, { id: 'known-1', containerId: 'opaque1' },
+    { id: 'known-2', containerId: 'opaque2' }], async record => {
+    attempted.push(record.id);
+    if (!record.containerId) throw new Error('Preserve uncertain receipt');
+    return { id: record.id, cleaned: true };
+  });
+  assert.deepEqual(attempted, ['uncertain', 'known-1', 'known-2']);
+  assert.equal(result.errors.length, 1);
+  assert.deepEqual(result.outcomes.map(outcome => outcome.id), ['known-1', 'known-2']);
 });

@@ -13,6 +13,12 @@ internal static class Program
             if (args is ["service"]) { Server.Dispatch(); return 0; }
             if (args is ["call"]) return Client.Call().GetAwaiter().GetResult();
             if (args is ["selftest"]) return SelfTest.Run();
+            if (args is ["doctor"])
+            {
+                var compatibility = Platform.Inspect();
+                Console.WriteLine(JsonSerializer.Serialize(compatibility, Protocol.Json));
+                return compatibility.Ready ? 0 : 1;
+            }
             if (args is ["verify-package", var verifySource])
             {
                 Console.WriteLine(JsonSerializer.Serialize(Installer.VerifyPackage(Path.GetFullPath(verifySource)), Protocol.Json));

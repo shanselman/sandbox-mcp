@@ -41,7 +41,8 @@ internal static class Server
             try
             {
                 Platform.Check();
-                Runtime.Recover();
+                var recovered = Runtime.Recover();
+                if (!recovered.Complete) recoveryError = string.Join("; ", recovered.Errors);
             }
             catch (Exception failure) { recoveryError = failure.Message; }
             Report(4, 0);
@@ -100,7 +101,7 @@ internal static class Server
                 if (!string.Equals(callerSid, config.OwnerSid, StringComparison.Ordinal))
                     throw new UnauthorizedAccessException("Caller is not the installed owner");
                 var request = Protocol.Parse(bytes);
-                if (request.Operation == "run-fixture")
+                if (request.Operation is "run-fixture" or "run-grid")
                 {
                     if (recoveryError is not null) throw new InvalidOperationException("Broker recovery/build check is required: " + recoveryError);
                     using var run = CancellationTokenSource.CreateLinkedTokenSource(stopping);
@@ -116,7 +117,7 @@ internal static class Server
                 }
                 else response = request.Operation switch
                 {
-                    "status" => new { ok = true, protocol = 1, ready = recoveryError is null, recoveryError, pending = Runtime.Summaries() },
+                    "status" => Status(),
                     "result" => Runtime.Result(request.Id!),
                     "ack" => Runtime.Ack(request.Id!),
                     "recover" => Recover(),
@@ -156,10 +157,16 @@ internal static class Server
         {
             Platform.Check();
             var response = Runtime.Recover();
-            recoveryError = null;
+            recoveryError = response.Complete ? null : string.Join("; ", response.Errors);
             return response;
         }
         catch (Exception failure) { recoveryError = failure.Message; throw; }
+    }
+    private static object Status()
+    {
+        var compatibility = Platform.Inspect();
+        return new { ok = true, protocol = 1, ready = recoveryError is null && compatibility.Ready,
+            recoveryError, compatibility, variants = new[] { "light", "dark", "dark-large" }, maxCoordinatedSessions = 3, pending = Runtime.Summaries() };
     }
     private static async Task MonitorDisconnect(Stream pipe, CancellationTokenSource run, CancellationToken stop)
     {

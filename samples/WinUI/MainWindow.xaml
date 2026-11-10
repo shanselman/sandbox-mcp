@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Hello WinUI">
-    <Grid Padding="24" RowSpacing="16"
+    <Grid x:Name="Root" Padding="24" RowSpacing="16"
           Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <Grid.Resources>
             <XamlUICommand x:Key="GreetCommand" ExecuteRequested="GreetRequested" />
@@ -31,5 +31,7 @@
             <TextBlock x:Name="Counter" AutomationProperties.AutomationId="Counter"
                        VerticalAlignment="Center" Text="Count: 0" />
         </StackPanel>
+        <TextBlock x:Name="VariantInfo" AutomationProperties.AutomationId="VariantInfo"
+                   Grid.Row="5" VerticalAlignment="Bottom" FontSize="11" TextWrapping="Wrap" Visibility="Collapsed" />
     </Grid>
 </Window>

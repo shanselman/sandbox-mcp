@@ -341,6 +341,55 @@ dotnet build broker -c Release
 node --test test\broker-client-state.test.mjs test\broker-client-lock.test.mjs
 ```
 
+### Coordinated camera-grid prototype
+
+The next protocol revision adds one bounded `run-grid` request containing
+exactly three unique owned accounts and the fixed `light`, `dark`, and
+`dark-large` variants. All sessions are created and journaled before the
+workers launch together. Recovery attempts every independently owned member
+even if another member cannot be cleaned; uncertain records remain visible.
+This is not arbitrary or unlimited multi-session execution.
+
+The ordinary client collects immutable, numbered frames at a 1fps target.
+The read-only loopback viewer displays fresh frames, stale/error states, and
+recorded final tiles. It can be opened in Copilot's built-in Browser canvas
+or an ordinary browser; no new canvas extension is required.
+
+```powershell
+# Build the changed sample without running the packaging/signing steps:
+dotnet publish ..\..\samples\WinUI\HelloWinUI.csproj -c Release -p:Platform=x64 --no-restore -o ..\..\samples\WinUI\bin\unpackaged
+$package = & .\broker-package.ps1 | Select-Object -Last 1
+& "$package\broker\SandboxMcp.FullBroker.exe" doctor
+# Explicit approval required for the privileged installed-service update:
+& "$package\broker\SandboxMcp.FullBroker.exe" install $package
+
+# Choose a new batch folder; the two long-running commands use separate terminals.
+node variant-run.mjs --prepare evidence\grid-attempt-1
+node camera-grid.mjs evidence\grid-attempt-1  # prints a capability-scoped loopback URL
+node variant-run.mjs evidence\grid-attempt-1
+```
+
+The viewer process is an ordinary-user process, not a System service. It has
+no execution endpoint and serves only allowlisted report/frame files. Stop
+that specific process after viewing. Completed tiles are explicitly recorded,
+not live. The batch writes `report.md` and `report.json`; the keep bar is all
+30 frames per member, average >=0.9fps, maximum gap <=2000ms, and >=20 seconds
+of common frame coverage across three distinct sessions.
+
+Actual window DPI and XAML rasterization scale are measured. `dark-large`
+uses a 1.5x **fixture render transform**, not a changed monitor DPI. No host
+theme, display setting or initial-program allowlist is changed.
+
+`doctor` and the broker's readiness response now distinguish missing
+experimental API exports from an unvalidated build/architecture. Missing-API
+guidance recommends current Windows updates and a restart when requested.
+The latest stable Windows is **not guaranteed** to expose these experimental
+APIs; a newer binary set still requires a validated broker release. The
+checks do not recommend copying DLLs, disabling gates or removing ABI pins.
+
+The coordinated path has local regression coverage but its runtime outcome
+must come from the generated batch evidence, not from these instructions.
+
 ## Experimental microVM and export discovery
 
 `microvm.json` and `hyperlight.json` are bounded smoke requests for the current

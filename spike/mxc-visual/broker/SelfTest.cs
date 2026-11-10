@@ -38,6 +38,43 @@ internal static class SelfTest
             Check("reject protocol " + passed, () => Reject(() => Parse(input)));
         Check("valid fixture", () => Parse("""{"protocol":1,"operation":"run-fixture","id":"0123456789abcdef0123456789abcdef","agentName":"A1-B2","agentSid":"S-1-5-21-1-2-3-1001","containerId":"opaque-do-not-parse"}"""));
         Check("client serialization omits irrelevant fields", () => Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "status"), Protocol.Json)));
+        foreach (string variant in new[] { "light", "dark", "dark-large" })
+            Check("allowlisted variant " + variant, () => Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(
+                new Request(1, "run-fixture", "0123456789abcdef0123456789abcdef", "A1-B2", "S-1-5-21-1-2-3-1001", "opaque", variant), Protocol.Json)));
+        Check("reject arbitrary variant", () => Reject(() => Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(
+            new Request(1, "run-fixture", "0123456789abcdef0123456789abcdef", "A1-B2", "S-1-5-21-1-2-3-1001", "opaque", "& cmd"), Protocol.Json))));
+        Check("missing experimental APIs guide updating without promising availability", () =>
+        {
+            var result = Platform.Classify("Arm64", "Windows test", ["wtsapi32!EXPERIMENTAL_WTSCreateHeadlessSession"], []);
+            if (result.Ready || result.Code != "experimental_apis_missing" || !result.Message.Contains("latest available Windows updates")
+                || !result.Message.Contains("not a guarantee")) throw new Exception("Missing-API guidance incorrect");
+        });
+        Check("newer unvalidated binaries fail closed", () =>
+        {
+            var result = Platform.Classify("Arm64", "Windows newer", [], ["lsm.dll"]);
+            if (result.Ready || result.Code != "experimental_build_not_validated") throw new Exception("Unknown ABI accepted");
+        });
+        Check("unsupported architecture remains explicit", () =>
+        {
+            var result = Platform.Classify("X64", "Windows test", [], []);
+            if (result.Ready || result.Code != "architecture_not_validated") throw new Exception("Architecture accepted without validation");
+        });
+        Check("validated host is ready", () =>
+        {
+            if (!Platform.Classify("Arm64", "Windows test", [], []).Ready) throw new Exception("Validated host rejected");
+        });
+        var members = new[] { "light", "dark", "dark-large" }.Select((variant, index) =>
+            new GridMember(index.ToString("x32"), $"A{index}-B{index}", $"S-1-5-21-1-2-3-{1001 + index}", $"opaque-{index}", variant)).ToArray();
+        Check("exactly three coordinated variants accepted", () =>
+            Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "run-grid", Members: members), Protocol.Json)));
+        Check("unbounded grid rejected", () => Reject(() =>
+            Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "run-grid", Members: [.. members, members[0]]), Protocol.Json))));
+        Check("duplicate agent identity rejected", () => Reject(() =>
+            Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "run-grid", Members: [members[0], members[1], members[2] with { AgentSid = members[0].AgentSid }]), Protocol.Json))));
+        Check("grid with repeated theme rejected", () => Reject(() =>
+            Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "run-grid", Members: [members[0], members[1], members[2] with { Variant = "light" }]), Protocol.Json))));
+        Check("nested duplicate JSON property rejected", () => Reject(() =>
+            Parse("""{"protocol":1,"operation":"run-grid","members":[{"id":"a","id":"b"}]}""")));
         foreach (string input in new[] { @"..\broker\evil.exe", @"broker\..\evil.exe", @"C:\broker\evil.exe", @"broker\file:stream", @"broker\CON", @"broker\file.", @"broker\file ", @"broker\\file", "broker/file", @"unknown\file" })
             Check("reject package path " + input, () => Reject(() => Installer.ValidateRelativePath(input)));
         Check("valid package path", () => Installer.ValidateRelativePath(@"fixture\Assets\Logo.png"));
@@ -96,6 +133,19 @@ internal static class SelfTest
             try { Runtime.PlanCleanup(lease, new Dictionary<int, Native.Ownership> { [8] = Native.Ownership.Owned }); }
             catch (InvalidOperationException) { return; }
             throw new Exception("Baseline collision accepted");
+        });
+        Check("failed recovery member does not block independent session cleanup", () =>
+        {
+            var group = members.Select(member => lease with { Request = member.AsRequest() }).ToArray();
+            var attempted = new List<string>();
+            var saved = new List<Lease>();
+            var errors = Runtime.RecoverLeases(group, item =>
+            {
+                attempted.Add(item.Request.Id!);
+                if (item.Request.Id == group[0].Request.Id) throw new IOException("Synthetic stop failure");
+            }, saved.Add);
+            if (attempted.Count != 3 || saved.Count != 2 || saved.Any(item => item.Phase != "finished") || errors.Length != 1)
+                throw new Exception("Independent recovery was not attempted for every member");
         });
         void FileCase(string name, Action<string> test)
         {

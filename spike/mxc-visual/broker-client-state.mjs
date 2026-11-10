@@ -50,8 +50,18 @@ export function mergePending(local, remote, detail) {
   };
 }
 
+export async function recoverIndependent(records, cleanup) {
+  const outcomes = [], errors = [];
+  for (const record of records) {
+    try { outcomes.push(await cleanup(record)); }
+    catch (error) { errors.push(error); }
+  }
+  return { outcomes, errors };
+}
+
 const evidenceFiles = [
-  'worker.json', 'worker-started.json', 'job.json', 'authorization.json',
+  'worker.json', 'worker-started.json', 'job.json', 'authorization.json', 'fixture-settings.json', 'stream.json', 'live.json',
+  ...Array.from({ length: 30 }, (_, i) => `frame-${String(i).padStart(3, '0')}.png`),
   ...['1-before', '2-after'].flatMap(label => ['screen', 'window-bitblt', 'printwindow-0', 'printwindow-2'].map(method => `${label}-${method}.png`)),
 ];
 export function copyEvidence(workspace, key, destination) {

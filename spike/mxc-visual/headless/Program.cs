@@ -71,7 +71,7 @@ internal static class Program
         public int State;
     }
 
-    internal sealed record Job(string Output, string App, string Helper, int? ExpectedSessionId = null);
+    internal sealed record Job(string Output, string App, string Helper, int? ExpectedSessionId = null, string? Variant = null);
     private sealed record HelperResult(int ExitCode, string Stdout, string Stderr);
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
@@ -93,6 +93,8 @@ internal static class Program
             if (args.Length == 2 && args[0] == "system-status") return SystemSessionProbe.Status(args[1]);
             if (args.Length == 3 && args[0] == "installed-worker")
                 return InstalledWorker(int.Parse(args[1]), args[2]);
+            if (args.Length == 4 && args[0] == "installed-worker")
+                return InstalledWorker(int.Parse(args[1]), args[2], args[3]);
             if (args.Length == 1 && args[0] == "platform")
             {
                 int status = WHvGetCapability(0, out int present, sizeof(int), out uint written);
@@ -135,7 +137,7 @@ internal static class Program
         }
     }
 
-    private static int InstalledWorker(int expectedSession, string outputKey)
+    private static int InstalledWorker(int expectedSession, string outputKey, string? variant = null)
     {
         using var identity = WindowsIdentity.GetCurrent();
         if (identity.User?.IsWellKnown(WellKnownSidType.LocalSystemSid) != false
@@ -144,6 +146,8 @@ internal static class Program
             throw new UnauthorizedAccessException("Installed worker must run only as the owned non-console agent");
         if (!Guid.TryParseExact(outputKey, "N", out _) || outputKey != outputKey.ToLowerInvariant())
             throw new ArgumentException("Invalid output key");
+        if (variant is not (null or "light" or "dark" or "dark-large"))
+            throw new ArgumentException("Unsupported fixed fixture variant");
         string release = Directory.GetParent(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))!.FullName;
         string output = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Shared", "broker-" + outputKey);
         if (Directory.Exists(output)) throw new IOException("Worker output already exists; refusing to overwrite evidence");
@@ -161,7 +165,7 @@ internal static class Program
             JsonSerializer.Serialize(new { sessionId = expectedSession, nonOwnerPipeAccessDenied = denied }, JsonOptions));
         if (!denied) throw new UnauthorizedAccessException("The agent could reach the owner-only authorization-test pipe");
         var job = new Job(output, Path.Combine(release, "fixture", "HelloWinUI.exe"),
-            Path.Combine(release, "helper", "CaptureHelper.exe"), expectedSession);
+            Path.Combine(release, "helper", "CaptureHelper.exe"), expectedSession, variant);
         string path = Path.Combine(output, "job.json");
         File.WriteAllText(path, JsonSerializer.Serialize(job, JsonOptions));
         return Worker(path);
@@ -404,11 +408,12 @@ internal static class Program
         using var process = Process.Start(start) ?? throw new InvalidOperationException("Helper failed to start");
         var stdout = process.StandardOutput.ReadToEndAsync();
         var stderr = process.StandardError.ReadToEndAsync();
-        if (!process.WaitForExit(30000))
+        int timeout = arguments.FirstOrDefault() == "stream" ? 45000 : 30000;
+        if (!process.WaitForExit(timeout))
         {
             process.Kill(entireProcessTree: true);
             process.WaitForExit();
-            throw new TimeoutException("Owned helper exceeded 30 seconds");
+            throw new TimeoutException($"Owned helper exceeded {timeout} milliseconds");
         }
         return new(process.ExitCode, stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
     }
@@ -428,7 +433,15 @@ internal static class Program
             if (job.ExpectedSessionId is not null && Process.GetCurrentProcess().SessionId != job.ExpectedSessionId)
                 throw new InvalidOperationException("Worker is not in the expected owned session");
             File.WriteAllText(Path.Combine(job.Output, "worker-started.json"), JsonSerializer.Serialize(report, JsonOptions));
-            app = Process.Start(new ProcessStartInfo(job.App) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(job.App)! })
+            var start = new ProcessStartInfo(job.App) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(job.App)! };
+            if (job.Variant is not null)
+            {
+                if (job.Variant is not ("light" or "dark" or "dark-large")) throw new ArgumentException("Unsupported fixture variant");
+                start.Environment["SBX_VISUAL_VARIANT"] = job.Variant;
+                start.Environment["SBX_VISUAL_OUTPUT"] = job.Output;
+                report["variant"] = job.Variant;
+            }
+            app = Process.Start(start)
                 ?? throw new InvalidOperationException("App failed to start");
             report["appPid"] = app.Id;
             var before = Helper(job, "capture", "--pid", app.Id.ToString(), "--out", job.Output, "--label", "1-before");
@@ -440,6 +453,12 @@ internal static class Program
             report["after"] = after;
             if (new[] { before, uia, after }.Any(result => result.ExitCode != 0))
                 throw new InvalidOperationException("One or more helper operations failed; see recorded output");
+            if (job.Variant is not null)
+            {
+                var stream = Helper(job, "stream", "--pid", app.Id.ToString(), "--out", job.Output);
+                report["stream"] = stream;
+                if (stream.ExitCode != 0) throw new InvalidOperationException("Bounded screenshot stream failed");
+            }
         }
         catch (Exception error) { report["error"] = error.ToString(); }
         finally

@@ -207,7 +207,7 @@ internal static class Native
         }
         catch { token.Dispose(); throw; }
     }
-    internal static uint RunWorker(int sessionId, string sid, string key, CancellationToken cancel)
+    internal static uint RunWorker(int sessionId, string sid, string key, string? variant, CancellationToken cancel)
     {
         Protocol.RequireId(key);
         using var token = OwnedToken(sessionId, sid);
@@ -216,7 +216,8 @@ internal static class Native
         try
         {
             var startup = new Startup { Size = (uint)Marshal.SizeOf<Startup>(), Desktop = @"winsta0\default" };
-            var command = new StringBuilder($"\"{executable}\" installed-worker {sessionId} {key}");
+            if (variant is not (null or "light" or "dark" or "dark-large")) throw new ArgumentException("Unsupported variant");
+            var command = new StringBuilder($"\"{executable}\" installed-worker {sessionId} {key}" + (variant is null ? "" : $" {variant}"));
             if (!CreateProcessAsUserW(token, executable, command, IntPtr.Zero, IntPtr.Zero, false,
                 0x08000400, environment, Path.GetDirectoryName(executable)!, ref startup, out var info)) throw Error("Launch fixed agent worker");
             using var process = new SafeProcessHandle(info.Process, true);

@@ -38,6 +38,7 @@ static class Program
                 case "windows": report["windows"] = ListWindows(null); break;
                 case "capture": Capture(opts, report); break;
                 case "uia": Uia(opts, report); break;
+                case "stream": Stream(opts, report); break;
                 default: report["error"] = "unknown verb"; break;
             }
         }
@@ -118,6 +119,7 @@ static class Program
         report["windows"] = ListWindows(pid);
         if (hwnd == IntPtr.Zero) { report["error"] = "no visible window for pid"; return; }
         report["hwnd"] = $"0x{hwnd:X}";
+        report["actualWindowDpi"] = GetDpiForWindow(hwnd);
         SetForegroundWindow(hwnd);
         Thread.Sleep(int.Parse(o.GetValueOrDefault("settle", "500")));
         GetWindowRect(hwnd, out var r);
@@ -154,6 +156,79 @@ static class Program
         }
         report["captures"] = results;
     }
+
+    static void Stream(Dictionary<string, string> options, Dictionary<string, object?> report)
+    {
+        int pid = ResolvePid(options);
+        using var target = Process.GetProcessById(pid);
+        if (target.SessionId != Process.GetCurrentProcess().SessionId)
+            throw new InvalidOperationException("Capture target is outside the helper's session");
+        string output = options["out"];
+        var hwnd = MainWindow(pid, 10000);
+        if (hwnd == IntPtr.Zero) throw new InvalidOperationException("No visible target window");
+        var frames = new List<object>();
+        var timer = Stopwatch.StartNew();
+        int failures = 0;
+        for (int sequence = 0; sequence < 30; sequence++)
+        {
+            int delay = checked((int)(sequence * 1000 - timer.ElapsedMilliseconds));
+            if (delay > 0) Thread.Sleep(delay);
+            if (target.HasExited) throw new InvalidOperationException("Target exited during the bounded stream");
+            if (sequence > 0 && sequence % 5 == 0)
+            {
+                var automation = new Dictionary<string, object?>();
+                Uia(new Dictionary<string, string> { ["pid"] = pid.ToString(), ["invoke"] = "IncrementButton" }, automation);
+                if (automation.ContainsKey("error")) throw new InvalidOperationException("Streaming UIA update failed");
+            }
+            long start = timer.ElapsedMilliseconds;
+            string name = $"frame-{sequence:D3}.png";
+            try
+            {
+                GetWindowRect(hwnd, out var rect);
+                int width = rect.R - rect.L, height = rect.B - rect.T;
+                if (width <= 0 || height <= 0 || (long)width * height > 16000000)
+                    throw new InvalidOperationException("Invalid capture dimensions");
+                using var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+                using (var graphics = Graphics.FromImage(bitmap))
+                {
+                    var dc = graphics.GetHdc();
+                    try { if (!PrintWindow(hwnd, dc, 2)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "PrintWindow"); }
+                    finally { graphics.ReleaseHdc(dc); }
+                }
+                string path = Path.Combine(output, name);
+                bitmap.Save(path + ".tmp", ImageFormat.Png);
+                File.Move(path + ".tmp", path);
+                var frame = new { sequence, at = DateTimeOffset.UtcNow, elapsedMs = timer.ElapsedMilliseconds,
+                    captureMs = timer.ElapsedMilliseconds - start, scheduledMs = sequence * 1000, file = name,
+                    sessionId = target.SessionId, pid, width, height, actualWindowDpi = GetDpiForWindow(hwnd), error = (string?)null };
+                frames.Add(frame);
+                WriteLive(output, frame);
+            }
+            catch (Exception error)
+            {
+                failures++;
+                var frame = new { sequence, at = DateTimeOffset.UtcNow, elapsedMs = timer.ElapsedMilliseconds,
+                    sessionId = target.SessionId, pid, error = error.Message };
+                frames.Add(frame);
+                WriteLive(output, frame);
+            }
+        }
+        report["frames"] = frames;
+        report["targetFps"] = 1;
+        report["failedFrames"] = failures;
+        File.WriteAllText(Path.Combine(output, "stream.json"), JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+        if (failures != 0) throw new InvalidOperationException($"{failures} capture frames failed");
+    }
+
+    static void WriteLive(string output, object frame)
+    {
+        string path = Path.Combine(output, "live.json");
+        File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(frame));
+        File.Move(path + ".tmp", path, true);
+    }
+
+    [DllImport("user32.dll")]
+    static extern uint GetDpiForWindow(IntPtr hwnd);
 
     static Dictionary<string, object?> Try(string method, string label, string outDir, Func<Bitmap> grab)
     {

@@ -34,6 +34,13 @@ Each UI test invokes **Greet** through UI Automation and waits for the greeting 
 typing and a file write. A test failure returns a nonzero exit code and the run's `report.md` / `report.json`
 contain screenshots and diagnostics.
 
+The experimental Full-session camera-grid worker can opt the WinUI sample
+into `SBX_VISUAL_VARIANT=light|dark|dark-large` and an agent-owned
+`SBX_VISUAL_OUTPUT` directory. Without these variables the original sample
+behavior is unchanged. The large variant is a labeled 1.5x fixture render
+transform, **not monitor DPI configuration**; actual DPI and XAML scale are
+recorded. See [the isolated-session spike](../spike/mxc-visual/README.md).
+
 Self-contained is intentional: do not assume that a clean guest has a compatible modern .NET or Windows App SDK
 application runtime. Observed inbox/CBS Windows App Runtime packages are not proof that an app's requested runtime
 is present. Shipping an app-local self-contained payload is different from explicitly installing a runtime in

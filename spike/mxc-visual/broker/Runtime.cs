@@ -9,36 +9,59 @@ internal static class Runtime
 {
     public static object Run(Request request, Configuration config, CancellationToken cancel)
     {
-        Platform.Check();
-        string id = request.Id!;
-        if (Directory.Exists(Paths.JobDirectory(id))) return Result(id);
-        var outstanding = Paths.Leases();
-        if (outstanding.Length >= 128 || outstanding.Any(lease => lease.Phase != "finished"))
-            throw new InvalidOperationException("Run client recovery before creating another session");
-        var actualSid = (SecurityIdentifier)new NTAccount(Environment.MachineName, request.AgentName!).Translate(typeof(SecurityIdentifier));
-        if (actualSid.Value != request.AgentSid || actualSid.Value == config.OwnerSid)
-            throw new UnauthorizedAccessException("Agent account does not match the requested disposable SID");
-        var before = Native.Sessions();
-        foreach (var session in before.Where(session => session.Key != 0 && session.Value != 6))
+        if (request.Operation == "run-grid")
         {
-            var ownership = Native.ClassifySession(session.Key, request.AgentName!, request.AgentSid!);
-            if (ownership == Native.Ownership.Owned)
-                throw new InvalidOperationException("Agent already has a session; a fresh provisioned account is required");
-            if (ownership == Native.Ownership.Unknown)
-                throw new InvalidOperationException("A session is initializing without an attributable user; wait before creating a Full session");
+            var results = RunGroup(request.Members!.Select(member => member.AsRequest()).ToArray(), config, cancel);
+            return new { ok = true, results };
         }
+        if (Directory.Exists(Paths.JobDirectory(request.Id!))) return Result(request.Id!);
+        return RunGroup([request], config, cancel)[0];
+    }
 
-        var report = new Dictionary<string, object?> { ["id"] = id, ["created"] = false, ["started"] = DateTimeOffset.UtcNow };
-        var lease = new Lease(request, Guid.NewGuid().ToString("N"), before.Keys.ToArray(), null, "creating", DateTimeOffset.UtcNow);
-        bool journaled = false;
+    private sealed class Work(Request request, int[] baseline)
+    {
+        public Request Request { get; } = request;
+        public Lease Lease { get; set; } = new(request, Guid.NewGuid().ToString("N"), baseline, null, "creating", DateTimeOffset.UtcNow);
+        public bool Journaled { get; set; }
+        public Dictionary<string, object?> Report { get; } = new() { ["id"] = request.Id, ["created"] = false, ["started"] = DateTimeOffset.UtcNow };
+    }
+
+    private static object[] RunGroup(Request[] requests, Configuration config, CancellationToken cancel)
+    {
+        Platform.Check();
+        if (requests.Length is not (1 or 3)) throw new InvalidDataException("Unsupported group size");
+        if (requests.Any(request => Directory.Exists(Paths.JobDirectory(request.Id!))))
+            throw new InvalidOperationException("A grid member already has a journal; recover instead of repeating creation");
+        var outstanding = Paths.Leases();
+        if (outstanding.Length + requests.Length > 128 || outstanding.Any(lease => lease.Phase != "finished"))
+            throw new InvalidOperationException("Run client recovery before creating another session");
+        var before = Native.Sessions();
+        foreach (var request in requests)
+        {
+            var actualSid = (SecurityIdentifier)new NTAccount(Environment.MachineName, request.AgentName!).Translate(typeof(SecurityIdentifier));
+            if (actualSid.Value != request.AgentSid || actualSid.Value == config.OwnerSid)
+                throw new UnauthorizedAccessException("Agent account does not match the requested disposable SID");
+            foreach (var session in before.Where(session => session.Key != 0 && session.Value != 6))
+            {
+                var ownership = Native.ClassifySession(session.Key, request.AgentName!, request.AgentSid!);
+                if (ownership == Native.Ownership.Owned)
+                    throw new InvalidOperationException("Agent already has a session; a fresh provisioned account is required");
+                if (ownership == Native.Ownership.Unknown)
+                    throw new InvalidOperationException("A session is initializing without an attributable user; wait before creating a Full session");
+            }
+        }
+        var group = requests.Select(request => new Work(request, before.Keys.ToArray())).ToArray();
         try
         {
-            using (var credential = LocalAgentCredential.Acquire(request.AgentName!, report, new SecurityIdentifier(config.OwnerSid)))
+            foreach (var work in group)
             {
-                LocalAgentCredential.VerifyOwnerBinding(request.AgentName!, new SecurityIdentifier(config.OwnerSid), actualSid);
+                var request = work.Request;
+                using var credential = LocalAgentCredential.Acquire(request.AgentName!, work.Report, new SecurityIdentifier(config.OwnerSid));
+                LocalAgentCredential.VerifyOwnerBinding(request.AgentName!, new SecurityIdentifier(config.OwnerSid), new SecurityIdentifier(request.AgentSid!));
                 cancel.ThrowIfCancellationRequested();
-                Paths.SaveLease(lease);
-                journaled = true;
+                work.Lease = work.Lease with { Created = DateTimeOffset.UtcNow };
+                Paths.SaveLease(work.Lease);
+                work.Journaled = true;
                 var parameters = new Native.HeadlessParameters
                 {
                     Size = checked((uint)(Marshal.OffsetOf<Native.HeadlessParameters>(nameof(Native.HeadlessParameters.Parent)).ToInt32() + 4)),
@@ -48,51 +71,81 @@ internal static class Runtime
                 var timer = Stopwatch.StartNew();
                 bool created = Native.EXPERIMENTAL_WTSCreateHeadlessSession(ref parameters, out int sessionId);
                 int error = Marshal.GetLastWin32Error();
-                report["created"] = created;
-                report["createMs"] = timer.ElapsedMilliseconds;
+                work.Report["created"] = created;
+                work.Report["createMs"] = timer.ElapsedMilliseconds;
                 if (!created) throw new System.ComponentModel.Win32Exception(error, "Full session creation");
-                if (sessionId <= 0 || before.ContainsKey(sessionId) || sessionId == Native.WTSGetActiveConsoleSessionId())
+                if (sessionId <= 0 || before.ContainsKey(sessionId) || sessionId == Native.WTSGetActiveConsoleSessionId()
+                    || group.Any(other => other.Lease.SessionId == sessionId))
                     throw new InvalidOperationException("Refusing an existing/console session ID");
-                lease = lease with { SessionId = sessionId, Phase = "running" };
-                Paths.SaveLease(lease);
+                work.Lease = work.Lease with { SessionId = sessionId, Phase = "running" };
+                Paths.SaveLease(work.Lease);
+                if (!Native.IsOwnedSession(sessionId, request.AgentName!, request.AgentSid!))
+                    throw new UnauthorizedAccessException("Created session ownership could not be verified");
+                work.Report["sessionId"] = sessionId;
+                work.Report["outputKey"] = work.Lease.OutputKey;
+                work.Report["variant"] = request.Variant ?? "baseline";
             }
             cancel.ThrowIfCancellationRequested();
-            if (!Native.IsOwnedSession(lease.SessionId!.Value, request.AgentName!, request.AgentSid!))
-                throw new UnauthorizedAccessException("Created session ownership could not be verified");
-            report["sessionId"] = lease.SessionId;
-            report["outputKey"] = lease.OutputKey;
+            var active = Native.Sessions();
+            if (group.Any(work => !active.ContainsKey(work.Lease.SessionId!.Value)))
+                throw new InvalidOperationException("Not all owned sessions survived until coordinated worker launch");
+            foreach (var work in group)
+            {
+                work.Report["coordinatedSessionIds"] = group.Select(member => member.Lease.SessionId!.Value).ToArray();
+                work.Report["allSessionsPresentAtWorkerLaunch"] = true;
+            }
             using var authorizationProbe = Native.Pipe(config.OwnerSid, true);
-            report["workerExitCode"] = Native.RunWorker(lease.SessionId.Value, request.AgentSid!, lease.OutputKey, cancel);
-            report["success"] = (uint)report["workerExitCode"]! == 0;
-        }
-        catch (Exception error)
-        {
-            report["success"] = false;
-            report["error"] = error.Message;
-        }
-        finally
-        {
-            if (journaled)
+            using var workers = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+            Task.WaitAll(group.Select(work => Task.Run(() =>
             {
                 try
                 {
-                    Cleanup(lease);
-                    report["sessionCleanupComplete"] = true;
-                    lease = lease with { Phase = "finished" };
+                    work.Report["workerStartedAt"] = DateTimeOffset.UtcNow;
+                    uint code = Native.RunWorker(work.Lease.SessionId!.Value, work.Request.AgentSid!, work.Lease.OutputKey, work.Request.Variant, workers.Token);
+                    work.Report["workerExitCode"] = code;
+                    work.Report["success"] = code == 0;
+                    if (code != 0) workers.Cancel();
+                }
+                catch (Exception error) { work.Report["success"] = false; work.Report["error"] = error.Message; workers.Cancel(); }
+                finally { work.Report["workerFinishedAt"] = DateTimeOffset.UtcNow; }
+            }, CancellationToken.None)).ToArray());
+        }
+        catch (Exception error)
+        {
+            foreach (var work in group) { work.Report["success"] = false; work.Report["error"] = error.Message; }
+        }
+        finally
+        {
+            foreach (var work in group)
+            {
+                if (!work.Journaled) { work.Report["sessionCleanupComplete"] = true; continue; }
+                try
+                {
+                    Cleanup(work.Lease);
+                    work.Report["sessionCleanupComplete"] = true;
+                    work.Lease = work.Lease with { Phase = "finished" };
                 }
                 catch (Exception error)
                 {
-                    report["success"] = false;
-                    report["sessionCleanupComplete"] = false;
-                    report["cleanupError"] = error.Message;
-                    lease = lease with { Phase = "recovery-required" };
+                    work.Report["success"] = false;
+                    work.Report["sessionCleanupComplete"] = false;
+                    work.Report["cleanupError"] = error.Message;
+                    work.Lease = work.Lease with { Phase = "recovery-required" };
                 }
-                lease = lease with { Result = JsonSerializer.SerializeToElement(report, Protocol.Json) };
-                Paths.SaveLease(lease);
+                try
+                {
+                    work.Lease = work.Lease with { Result = JsonSerializer.SerializeToElement(work.Report, Protocol.Json) };
+                    Paths.SaveLease(work.Lease);
+                }
+                catch (Exception error)
+                {
+                    work.Report["success"] = false;
+                    work.Report["journalError"] = error.Message;
+                    // Continue cleaning the remaining owned sessions.
+                }
             }
         }
-        if (!journaled) report["sessionCleanupComplete"] = true;
-        return new { ok = true, state = journaled ? lease.Phase : "rejected", report };
+        return group.Select(work => (object)new { ok = true, state = work.Journaled ? work.Lease.Phase : "rejected", report = work.Report }).ToArray();
     }
 
     private static void Cleanup(Lease lease)
@@ -140,21 +193,34 @@ internal static class Runtime
                 && (pair.Key == lease.SessionId || lease.SessionId is null && !baseline.Contains(pair.Key))).Select(pair => pair.Key).ToArray());
     }
 
-    public static object Recover()
+    internal sealed record RecoveryResult(bool Ok, bool Complete, string[] Errors, object[] Pending);
+
+    public static RecoveryResult Recover()
     {
-        foreach (var lease in Paths.Leases())
+        string[] failures = RecoverLeases(Paths.Leases(), Cleanup, Paths.SaveLease);
+        return new(true, failures.Length == 0, failures, Summaries());
+    }
+
+    internal static string[] RecoverLeases(IEnumerable<Lease> leases, Action<Lease> cleanup, Action<Lease> save)
+    {
+        var failures = new List<string>();
+        foreach (var lease in leases)
         {
             if (lease.Phase == "finished") continue;
-            Cleanup(lease);
-            var result = JsonSerializer.SerializeToElement(new
+            try
             {
-                success = false, sessionCleanupComplete = true,
-                error = "Interrupted run recovered; the client must preserve evidence and deprovision its account",
-                outputKey = lease.OutputKey
-            }, Protocol.Json);
-            Paths.SaveLease(lease with { Phase = "finished", Result = result });
+                cleanup(lease);
+                var result = JsonSerializer.SerializeToElement(new
+                {
+                    success = false, sessionCleanupComplete = true,
+                    error = "Interrupted run recovered; the client must preserve evidence and deprovision its account",
+                    outputKey = lease.OutputKey
+                }, Protocol.Json);
+                save(lease with { Phase = "finished", Result = result });
+            }
+            catch (Exception error) { failures.Add($"{lease.Request.Id}: {error.Message}"); }
         }
-        return new { ok = true, pending = Summaries() };
+        return failures.ToArray();
     }
 
     public static object[] Summaries() => Paths.Leases().Select(lease => (object)new
