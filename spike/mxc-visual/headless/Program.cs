@@ -444,6 +444,15 @@ internal static class Program
             app = Process.Start(start)
                 ?? throw new InvalidOperationException("App failed to start");
             report["appPid"] = app.Id;
+            if (job.Variant is not null)
+            {
+                var ready = Helper(job, "uia", "--pid", app.Id.ToString());
+                report["readiness"] = ready;
+                if (ready.ExitCode != 0) throw new InvalidOperationException("WinUI readiness inspection failed");
+                using var observed = JsonDocument.Parse(ready.Stdout);
+                if (!observed.RootElement.GetProperty("uiaIds").EnumerateArray().Any(item => item.GetString() == "ControlType.Text:Counter:Count: 0"))
+                    throw new InvalidOperationException("Initial counter was not ready before the baseline capture");
+            }
             var before = Helper(job, "capture", "--pid", app.Id.ToString(), "--out", job.Output, "--label", "1-before");
             report["before"] = before;
             var uia = Helper(job, "uia", "--pid", app.Id.ToString(), "--set", "NameBox=FullSession",

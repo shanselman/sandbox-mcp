@@ -9,13 +9,16 @@ export function readFrame(workspace, destination, observed, now = Date.now()) {
   if (directories.length !== 1) throw new Error('Ambiguous live output; refusing to display a different session');
   const source = path.join(workspace, directories[0]);
   if (fs.lstatSync(source).isSymbolicLink()) throw new Error('Live output is a reparse point');
-  const status = path.join(source, 'live.json');
+  const metadataFiles = fs.readdirSync(source).filter(name => /^frame-meta-\d{3}\.json$/.test(name)).sort();
+  const status = path.join(source, metadataFiles.at(-1) ?? 'live.json');
   if (!fs.existsSync(status)) return null;
   if (fs.lstatSync(status).isSymbolicLink() || fs.statSync(status).size > 16384) throw new Error('Invalid live metadata');
   const frame = JSON.parse(fs.readFileSync(status, 'utf8'));
   if (!Number.isInteger(frame.sequence) || frame.sequence < 0 || frame.sequence >= 30
     || !Number.isInteger(frame.sessionId) || frame.sessionId <= 0 || !Number.isFinite(Date.parse(frame.at)))
     throw new Error('Invalid frame metadata');
+  if (metadataFiles.length && path.basename(status) !== `frame-meta-${String(frame.sequence).padStart(3, '0')}.json`)
+    throw new Error('Frame sequence does not match immutable metadata');
   if (observed.sessionId && observed.sessionId !== frame.sessionId) throw new Error('Live session identity changed');
   observed.sessionId = frame.sessionId;
   if (frame.error) return { ...frame, receivedAt: new Date(now).toISOString(), error: String(frame.error).slice(0, 1000) };

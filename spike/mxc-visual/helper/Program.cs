@@ -174,12 +174,6 @@ static class Program
             int delay = checked((int)(sequence * 1000 - timer.ElapsedMilliseconds));
             if (delay > 0) Thread.Sleep(delay);
             if (target.HasExited) throw new InvalidOperationException("Target exited during the bounded stream");
-            if (sequence > 0 && sequence % 5 == 0)
-            {
-                var automation = new Dictionary<string, object?>();
-                Uia(new Dictionary<string, string> { ["pid"] = pid.ToString(), ["invoke"] = "IncrementButton" }, automation);
-                if (automation.ContainsKey("error")) throw new InvalidOperationException("Streaming UIA update failed");
-            }
             long start = timer.ElapsedMilliseconds;
             string name = $"frame-{sequence:D3}.png";
             try
@@ -202,7 +196,7 @@ static class Program
                     captureMs = timer.ElapsedMilliseconds - start, scheduledMs = sequence * 1000, file = name,
                     sessionId = target.SessionId, pid, width, height, actualWindowDpi = GetDpiForWindow(hwnd), error = (string?)null };
                 frames.Add(frame);
-                WriteLive(output, frame);
+                WriteLive(output, sequence, frame);
             }
             catch (Exception error)
             {
@@ -210,7 +204,7 @@ static class Program
                 var frame = new { sequence, at = DateTimeOffset.UtcNow, elapsedMs = timer.ElapsedMilliseconds,
                     sessionId = target.SessionId, pid, error = error.Message };
                 frames.Add(frame);
-                WriteLive(output, frame);
+                WriteLive(output, sequence, frame);
             }
         }
         report["frames"] = frames;
@@ -220,11 +214,13 @@ static class Program
         if (failures != 0) throw new InvalidOperationException($"{failures} capture frames failed");
     }
 
-    static void WriteLive(string output, object frame)
+    static void WriteLive(string output, int sequence, object frame)
     {
-        string path = Path.Combine(output, "live.json");
+        // Immutable metadata avoids replacing a cross-account file while a
+        // collector has it open; publication is a rename to a new name.
+        string path = Path.Combine(output, $"frame-meta-{sequence:D3}.json");
         File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(frame));
-        File.Move(path + ".tmp", path, true);
+        File.Move(path + ".tmp", path);
     }
 
     [DllImport("user32.dll")]

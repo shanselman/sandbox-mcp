@@ -11,6 +11,7 @@ namespace HelloWinUI;
 public sealed partial class MainWindow : Window
 {
     private int _count;
+    private DispatcherTimer? _heartbeat;
 
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
@@ -45,8 +46,13 @@ public sealed partial class MainWindow : Window
         {
             uint dpi = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
             VariantInfo.Visibility = Visibility.Visible;
-            VariantInfo.Text = $"{Root.ActualTheme} | actual DPI {dpi} | fixture scale {layoutScale:0.0}x"
+            string description = $"{Root.ActualTheme} | actual DPI {dpi} | fixture scale {layoutScale:0.0}x"
                 + (layoutScale != 1 ? " (not monitor DPI)" : "");
+            int tick = 0;
+            VariantInfo.Text = description + " | tick 0";
+            _heartbeat = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _heartbeat.Tick += (_, _) => VariantInfo.Text = description + $" | tick {++tick}";
+            _heartbeat.Start();
             string output = Environment.GetEnvironmentVariable("SBX_VISUAL_OUTPUT")
                 ?? throw new InvalidOperationException("Missing visual fixture output");
             var settings = new { variant, theme = Root.ActualTheme.ToString(), actualWindowDpi = dpi,
@@ -56,6 +62,7 @@ public sealed partial class MainWindow : Window
             File.WriteAllText(file + ".tmp", JsonSerializer.Serialize(settings));
             File.Move(file + ".tmp", file, true);
         };
+        Closed += (_, _) => _heartbeat?.Stop();
     }
 
     private void GreetRequested(XamlUICommand sender, ExecuteRequestedEventArgs args)

@@ -390,6 +390,20 @@ checks do not recommend copying DLLs, disabling gates or removing ABI pins.
 The coordinated path has local regression coverage but its runtime outcome
 must come from the generated batch evidence, not from these instructions.
 
+The first coordinated attempt (`evidence\grid-20261110-0456`) demonstrated
+three simultaneous Full sessions (17/18/19) and live viewer frames, but
+**failed** before 30 frames per member. Replacing mutable `live.json` failed
+with Access denied; a failed worker caused bounded cancellation and cleanup
+of all three accounts/sessions. Inline UIA updates also stalled capture.
+The failed report is retained, not counted as a passing 1fps run.
+
+The corrected stream publishes immutable `frame-meta-NNN.json` files next to
+immutable PNGs, avoiding replacement of a file another account may have open.
+UIA verifies the greeting/counter before capture; an app-side timer animates
+a fixture heartbeat while the capture loop does only capture/publication.
+Actual monitor DPI is still unchanged. The cadence/overlap keep bar is not
+lowered to accommodate a failed run.
+
 ## Experimental microVM and export discovery
 
 `microvm.json` and `hyperlight.json` are bounded smoke requests for the current

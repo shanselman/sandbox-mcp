@@ -67,3 +67,25 @@ test('timer write failures are contained and finish always clears the interval',
   // An uncaught timer callback would fail the Node test process.
   await new Promise(resolve => setTimeout(resolve, 300));
 });
+test('immutable frame publication survives a reader holding earlier metadata open', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'full-immutable-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const workspace = path.join(root, 'shared'), source = path.join(workspace, `broker-${key}`), destination = path.join(root, 'copy');
+  fs.mkdirSync(source, { recursive: true });
+  const observed = { sequences: new Map() }, readers = [];
+  try {
+    for (let sequence = 0; sequence < 5; sequence++) {
+      const suffix = String(sequence).padStart(3, '0');
+      const bytes = Buffer.alloc(32); Buffer.from('89504e470d0a1a0a', 'hex').copy(bytes); bytes[31] = sequence;
+      fs.writeFileSync(path.join(source, `frame-${suffix}.png`), bytes);
+      const metadata = path.join(source, `frame-meta-${suffix}.json`);
+      fs.writeFileSync(metadata + '.tmp', JSON.stringify({
+        sequence, at: new Date().toISOString(), sessionId: 20, file: `frame-${suffix}.png`,
+      }));
+      fs.renameSync(metadata + '.tmp', metadata);
+      readers.push(fs.openSync(metadata, 'r'));
+      assert.equal(readFrame(workspace, destination, observed).sequence, sequence);
+    }
+    assert.equal(observed.sequences.size, 5);
+  } finally { for (const reader of readers) fs.closeSync(reader); }
+});
