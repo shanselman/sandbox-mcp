@@ -109,11 +109,25 @@ general Windows stability, or support for arbitrary applications. Both
 Windows and our broker/evidence writer changed, so this is not a controlled
 attribution of the improvement to either change.
 
+For the first 20 lifecycles, all 39 sampled Application Error records
+(20 Explorer, 19 ShellHost) carried event-security SIDs matching the tracked
+disposable agents, not an unexplained association inferred only from timing.
+This attribution does not establish the failure's cause or make it harmless.
+
 A bounded extension to 30 grids runs serial batches of three, with a
-90-minute ceiling, readiness checks, no pending jobs at cycle boundaries,
+90-minute cutoff for admitting another batch, readiness checks, no pending jobs at cycle boundaries,
 and a full image audit after each cycle. It stops on the first failure and
 never resumes automatically across a reboot. Completion is not implied by
-this plan; actual completed-run receipts are the evidence.
+this plan; actual completed-run receipts are the evidence. In-flight native
+calls are not forcibly cancelled at the cutoff: interrupting an unknown
+Windows lifecycle operation is not a safe timeout mechanism.
+
+The native theme-aware canvas was observed during round 14 with all three
+streams live: sequences 16/16/16 advanced to 28/28/27 in 11.5 seconds, with
+freshness below 1.1 seconds. Its own renderer was polling the server and
+reported the actual app palette with no CSP violations. This was current
+capture evidence, not replay. On completion the same viewer switches to
+recorded-state labels.
 
 ## What happens when Windows updates today
 
