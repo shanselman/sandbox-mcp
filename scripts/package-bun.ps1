@@ -123,10 +123,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $repoRoot $item) -Destination $prepared
   }
   Invoke-WebRequest -UseBasicParsing -Uri "https://raw.githubusercontent.com/oven-sh/bun/bun-v$requiredBunVersion/LICENSE.md" -OutFile (Join-Path $prepared 'BUN-LICENSE.md')
-  $licenses = Join-Path $prepared 'LICENSES'
-  New-Item -ItemType Directory -Path $licenses | Out-Null
-  Invoke-WebRequest -UseBasicParsing -Uri 'https://www.gnu.org/licenses/old-licenses/lgpl-2.0.txt' -OutFile (Join-Path $licenses 'LGPL-2.0.txt')
-  Invoke-WebRequest -UseBasicParsing -Uri 'https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt' -OutFile (Join-Path $licenses 'LGPL-2.1.txt')
+  Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSES') -Destination $prepared -Recurse
   $dependencyRoot = (Resolve-Path (Join-Path $repoRoot 'node_modules')).Path
   $notices = Join-Path $prepared 'DEPENDENCY-LICENSES'
   Get-ChildItem -LiteralPath $dependencyRoot -Recurse -File | Where-Object {

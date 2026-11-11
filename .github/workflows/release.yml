@@ -56,7 +56,11 @@ jobs:
                 elseif ($asset.Name -match '-bun\.zip$') { '-bun.zip' }
                 else { '.zip' }
               $name = "sandbox-mcp-feature-preview-$version-$short-win-x64$suffix"
+              $sidecar = "$($asset.FullName).sha256"
               Rename-Item -LiteralPath $asset.FullName -NewName $name
+              if (Test-Path -LiteralPath $sidecar) {
+                Rename-Item -LiteralPath $sidecar -NewName "$name.sha256"
+              }
             }
           }
           "### Verified Windows x64 packages`n" >> $env:GITHUB_STEP_SUMMARY

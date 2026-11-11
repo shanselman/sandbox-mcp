@@ -59,6 +59,10 @@ if (compiled) {
     /GNU LIBRARY GENERAL PUBLIC LICENSE/);
   assert.match(fs.readFileSync(path.join(unpacked, 'LICENSES', 'LGPL-2.1.txt'), 'utf8'),
     /GNU LESSER GENERAL PUBLIC LICENSE/);
+  for (const license of ['LGPL-2.0.txt', 'LGPL-2.1.txt']) {
+    assert.deepEqual(fs.readFileSync(path.join(unpacked, 'LICENSES', license)),
+      fs.readFileSync(path.join(sourceRoot, 'LICENSES', license)), `Packaged ${license} differs from the checked-in text.`);
+  }
   assert.match(buildInfo, /Bun source commit: [a-f0-9]{40}/);
   assert.match(buildInfo, /WebKit source commit: [a-f0-9]{40}/);
   assert.ok(fs.existsSync(path.join(unpacked, 'DEPENDENCY-LICENSES')), 'Dependency notices are missing.');

@@ -94,8 +94,12 @@ try {
     assert.ok(buildInfo.includes(line), `Runtime package and relinking source disagree on ${line}.`);
   }
   assert.ok(fs.existsSync(path.join(runtimeRoot, 'RELINKING.md')), 'Runtime package has no relinking instructions.');
-  assert.ok(fs.existsSync(path.join(runtimeRoot, 'LICENSES/LGPL-2.0.txt')), 'Runtime package is missing LGPL-2.0.');
-  assert.ok(fs.existsSync(path.join(runtimeRoot, 'LICENSES/LGPL-2.1.txt')), 'Runtime package is missing LGPL-2.1.');
+  for (const license of ['LGPL-2.0.txt', 'LGPL-2.1.txt']) {
+    const runtimeLicense = path.join(runtimeRoot, 'LICENSES', license);
+    assert.ok(fs.existsSync(runtimeLicense), `Runtime package is missing ${license}.`);
+    assert.deepEqual(fs.readFileSync(runtimeLicense), fs.readFileSync(path.join(sourceRoot, 'LICENSES', license)),
+      `Runtime and source packages disagree on ${license}.`);
+  }
   console.log(`Relinking source smoke test passed (${manifest.length} files, matching app/Bun/WebKit revisions and full LGPL texts).`);
 } finally {
   fs.rmSync(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

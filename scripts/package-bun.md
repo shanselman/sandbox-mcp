@@ -21,8 +21,9 @@ Requirements:
   Changing the pin requires explicit revalidation.
 - Git and a checkout with an identifiable `HEAD` commit.
 - Node/npm to restore the project dependencies.
-- Internet access to download Bun's license, full LGPL texts, and dependency
-  licenses.
+- Internet access to download the pinned Bun release's license from GitHub.
+  The full LGPL texts are checked in, and dependency notices come from
+  restored `node_modules/`.
 
 From the repository root:
 
@@ -132,8 +133,8 @@ The copied `src/cli.js` is compiled with:
 ```
 
 The existing CLI `mcp` command includes the server in the same executable. The
-script copies external resources, downloads Bun's license and the complete LGPL-2
-and LGPL-2.1 texts, and retains dependency license/notice files found under
+script copies external resources and the checked-in LGPL-2 and LGPL-2.1 texts,
+downloads Bun's license, and retains dependency license/notice files found under
 `node_modules/`. It checks the executable's version before preparing the runtime
 ZIP and companion source ZIP with SHA256 sidecars. Temporary build files,
 including the emitted source-map sidecar, are removed afterward.
