@@ -1,3 +1,4 @@
+using Microsoft.Win32;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 
@@ -44,6 +45,21 @@ internal sealed class WindowsSessionBackend : ISessionBackend
         try
         {
             LocalAgentCredential.VerifyOwnerBinding(request.AgentName!, new SecurityIdentifier(config.OwnerSid), new SecurityIdentifier(request.AgentSid!));
+
+            using var loadedProfile = Registry.Users.OpenSubKey(request.AgentSid!);
+            if (loadedProfile is not null)
+                throw new InvalidOperationException("Agent profile must be unloaded before shell classification");
+
+            using var profile = Registry.LocalMachine.OpenSubKey(
+                @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\" + request.AgentSid!, writable: true)
+                ?? throw new InvalidDataException("Provisioned agent profile is missing");
+            if (profile.GetValue("AgentUserProfile") is not int agent || agent != 1
+                || profile.GetValue("ComposableAgentUserProfile") is not int composable || composable != 1
+                || profile.GetValue("ShellAgentUserProfile") is not null)
+                throw new InvalidDataException("Expected a fresh composable agent profile");
+
+            profile.SetValue("ShellAgentUserProfile", 1, RegistryValueKind.DWord);
+            profile.DeleteValue("ComposableAgentUserProfile");
             return credential;
         }
         catch { credential.Dispose(); throw; }
