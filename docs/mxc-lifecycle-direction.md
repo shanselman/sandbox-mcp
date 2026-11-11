@@ -1,5 +1,27 @@
 # Direction: let MXC own the complete session lifecycle
 
+## Engineering framing
+
+The user relayed this Windows-engineer summary:
+
+> "Super tl;dr - this spike is jumping ahead of what MXC supports while partially using MXC so it is hitting a feature/API gap."
+
+Treat the hybrid as an exploratory bridge, not a supported MXC graphical
+session implementation. Correcting account classification makes the chosen
+Windows account/session combination more consistent; it does not supply a
+supported end-to-end SDK contract. The target is for MXC to expose and own the
+appropriate account type, graphical session, process launch, and complete
+cleanup. The SDK-only profile-retention reproduction is a separate contract
+question and should not be conflated with the hybrid's unsupported GUI path.
+
+The engineer also warned that the diagnostic patch relies on
+"internal(ish) regkeys". Matching the advised account/session pairing is
+therefore not the same as implementing a supported product contract. Keep
+the registry-classification path explicitly experimental; do not extend it
+with more private registry cleanup or ship it as ordinary MXC setup.
+The eventual replacement should be an MXC-owned provisioning option and
+complete lifecycle, not application-maintained knowledge of these values.
+
 ## What this spike does differently
 
 The current visual spike is a hybrid, not an ordinary MXC IsolationSession
@@ -19,11 +41,18 @@ Node SDK. Windows may use some of the same low-level machinery internally;
 the distinction is the supported caller contract and lifecycle ownership,
 not a claim that MXC and WTS never share implementation.
 
-The retained companion profiles demonstrate a gap in our combined workflow.
-They do not yet establish a defect in a fully MXC-managed lifecycle.
-Changing an SDK-created profile and then expecting its existing removal path
-to cover additional identities is a plausible explanation that needs the
-Windows/MXC owners' confirmation.
+The retained companion profiles initially raised concern about the combined
+workflow. Later SDK-only controls reproduced retention too, so mixing the
+lifecycles is not a necessary condition for that behavior.
+
+A Windows engineer subsequently clarified, through the user, that account
+classification and session kind are separate. The original account was tagged
+for an agent in a utility session, permitting Windows to skip AppX and other
+shell initialization. Passing `WTSHeadlessSessionKindFull = 1` alone did not
+change that account classification. The patch changes it to the shell-agent
+type immediately after provisioning and before first profile load. Thus an
+MXC-only graphical path needs appropriate account provisioning **and**
+compatible session creation, not merely a Full/Utility start switch.
 
 ## What the available MXC contract supports
 

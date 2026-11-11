@@ -115,6 +115,22 @@ profile has `AgentUserProfile=1` and `ComposableAgentUserProfile=1`, and that
 These writes are scoped to the freshly provisioned, owner-verified agent SID.
 The credential is disposed if validation or a registry operation fails.
 
+**Windows-engineer clarification relayed by the user:** before this patch,
+the provisioned account was tagged as an "agent in utility session", for
+which Windows can skip initialization such as AppX package registration.
+This account/profile classification is separate from the
+`WTSHeadlessSessionKindFull = 1` passed to session creation. Our Full flag was
+correct, but the account supplied to that Full session had the wrong
+classification for shell/AppX initialization. The classification must be set
+immediately after provisioning and before the profile is first loaded.
+
+This reconciles the captured Full-session evidence with the package-initialization
+failures, and fits the observed disappearance of Explorer/ShellHost crashes
+after the patch. It is an engineer-supplied explanation of this experimental
+contract, not a claim that the registry values form a supported public API.
+It does not establish the cause of the independent profile-retention issue,
+which also reproduced through the unmodified MXC lifecycle.
+
 On the new LSM build, before this classification change, Explorer still
 recorded a startup fail-fast in the baseline run. After an explicitly approved
 broker installation containing the exact patch, the first six fresh

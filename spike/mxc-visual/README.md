@@ -25,6 +25,68 @@ as clean. A warning-free SDK response still does not verify companion cleanup.
 The [tiny SDK-only repro](../../docs/pure-mxc-profile-repro.md) demonstrates
 retention without the custom broker.
 
+### List retained companion profiles (read-only)
+
+These are **profiles, not running sessions**. The helper lists the observed
+`S-1-5-110-...` family, combining CIM and ProfileList records, checking whether
+the hive is loaded, and including hidden directory metadata. It does not read
+profile contents/ACLs or change anything. A matching SID or unloaded state
+alone is **not proof that a profile belongs to this experiment or is orphaned**.
+
+From the repository root in PowerShell:
+
+```powershell
+$profiles = @(.\spike\mxc-visual\list-companion-profiles.ps1)
+$profiles | Group-Object State | Select-Object Name, Count
+$profiles | Format-Table SID, ProfilePath, Loaded, HiveLoaded, Hidden -AutoSize -Wrap
+
+# JSON export or inspect one exact SID:
+.\spike\mxc-visual\list-companion-profiles.ps1 -AsJson
+.\spike\mxc-visual\list-companion-profiles.ps1 -Sid '<exact companion SID>'
+
+# Running Windows sessions are a separate inventory:
+query session
+```
+
+#### How to approach cleanup
+
+First preserve the relevant receipts/events and establish which **exact SID**
+belongs to an abandoned test. Stop tests, verify the profile is neither loaded
+nor special, and confirm the supported cleanup route with the Windows/MXC
+owners for these MEM/companion identities. Do not bulk-delete every matching
+SID, guess ownership from a short folder name, or retry a consumed container ID.
+
+For normal Windows profile cleanup, use the profile-management API/provider,
+not `Remove-Item` on `C:\Users` or ProfileList registry surgery.
+[`DeleteProfileW`](https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-deleteprofilew)
+is the documented native operation and requires administrator privileges.
+The PowerShell CIM provider exposes profile deletion through
+[`Remove-CimInstance`](https://learn.microsoft.com/en-us/powershell/module/cimcmdlets/remove-ciminstance).
+**Deletion is irreversible and can remove all data in that profile. Its use on
+these experimental companion profiles has not been validated by this spike.**
+
+Once the identity and cleanup method are confirmed, this previews **one**
+profile from an administrator PowerShell window:
+
+```powershell
+$sid = '<exact companion SID verified against the test evidence>'
+if ($sid -notmatch '^S-1-5-110-[0-9-]+$') { throw 'Expected an exact companion SID' }
+$p = @(Get-CimInstance Win32_UserProfile | Where-Object SID -EQ $sid)
+if ($p.Count -ne 1 -or $p[0].Loaded -or $p[0].Special -or
+    (Test-Path -LiteralPath ("Registry::HKEY_USERS\" + $sid))) {
+    throw 'Profile is missing, ambiguous, loaded or special; do not delete'
+}
+$p[0] | Format-List SID, LocalPath, Loaded, Special
+$p[0] | Remove-CimInstance -WhatIf
+```
+
+After reviewing the exact SID/path, rerun the lookup and checks immediately
+before an approved deletion, then use `Remove-CimInstance -Confirm` in place
+of `-WhatIf`. Verify the CIM entry, ProfileList key and exact directory afterward.
+If the provider refuses or leaves anything behind, retain the error and stop;
+do not force-remove directories, change ACLs, or delete registry entries as a
+fallback. The inventory helper intentionally has **no delete switch**.
+
 Experimental code; see [the handoff](../../docs/visual-test-farm-spikes.md)
 for goals, results and the evidence contract. Not used by sandbox-mcp itself.
 
