@@ -2,6 +2,27 @@
 
 ## Status and scope
 
+### Single-profile cleanup experiment after reboot
+
+At the user's explicit request, one companion profile from the tiny
+SDK-only `whoami` reproduction was deleted through the Windows
+`Win32_UserProfile` CIM provider (`Remove-CimInstance`), after UAC approval.
+The exact SID and registered path matched the saved reproduction; its hive
+was unloaded, it was not special or the current user's profile, and the
+original provisioned account and test session were absent. A preview and
+fresh checks preceded the one deletion.
+
+The provider returned success. An independent unelevated audit confirmed
+that this SID's CIM entry, ProfileList key and exact directory were gone,
+and that no other profile identity changed. The companion count decreased
+from **185 to 184**. No forced directory/registry deletion, ACL change or
+consumed MXC container-ID retry was used.
+
+This is one successful Windows-provider cleanup experiment, **not an
+MXC-supported cleanup contract or authorization to delete every matching
+profile**. It does not prove that all other native companion-identity
+metadata was reclaimed. Other profiles remain untouched.
+
 **Further native qualification is on hold. Cleanup is incomplete.**
 The separately user-approved pure-SDK controls described below also reproduced
 retention; they do not establish that cleanup is safe or authorize more runs.
