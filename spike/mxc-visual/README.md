@@ -18,7 +18,7 @@ for goals, results and the evidence contract. Not used by sandbox-mcp itself.
 
 **Earlier single-session outcome:** an owner-only broker was installed and two ordinary-user
 runs produced changing WinUI pixels without per-run UAC. Start with
-[the installed broker](#owner-only-installed-broker-experimental) and
+[the setup guide](#setup-build-and-run-start-here) and
 [its host validation](#installed-host-validation-2026-11-09). The earlier
 sections below preserve the experiments in chronological order, including
 failures that the later System-context path resolved.
@@ -31,6 +31,264 @@ was copied.
 The replay uses copies of preserved images only and explicitly retains the
 failed source-run verdict. That hardening was later included in the explicitly
 approved candidate broker update; it did not alter the original evidence.
+
+## Setup, build, and run (start here)
+
+**Build/package support is not native runtime qualification.** Both `win-x64`
+and `win-arm64` broker, worker and capture-helper payloads can be built with
+the .NET SDK. The private credential ABI is currently inspected/pinned for
+ARM64 only. An x64 package is a build/inspection artifact, **not an enabled
+x64 Full-session broker**. Do not install/run it to try to bypass that limit.
+Even ARM64 `experimental_available` means eligible for staged testing, not
+proof that concurrent Windows session creation/teardown is safe.
+
+### 1. Prerequisites and architecture
+
+- Use a disposable Windows test host with the experimental IsolationSession
+  and WTS APIs. Updating to the latest stable Windows does not guarantee
+  these APIs exist. A VM still needs the required Windows capabilities; this
+  spike is not a Windows guest image.
+- Use **PowerShell 7+**, the **.NET 10 SDK**, and stable **Node 24.21+ or
+  26.8+**. The MXC SDK rejects prerelease Node. Use the native Node/SDK for the
+  host architecture, rather than accidentally using an emulated shell's tools.
+- On the **execution host**, install the .NET 10 **Windows Desktop Runtime**
+  matching the broker RID; it supplies the helper's Windows Desktop and the
+  broker/worker's .NET runtime dependencies. The payloads are framework-dependent.
+  Cross-publishing does not require the other architecture's runtime, but
+  executing its EXE does. An ARM64 runtime cannot run a `win-x64` apphost.
+- The WinUI fixture is self-contained for .NET and Windows App SDK, but those
+  settings do **not** bundle the VC++ runtime. Supply licensed app-local
+  release CRT DLLs as in [the sample build](../../samples/WinUI/README.md), or
+  install the current Microsoft VC++ v14 Redistributable for the **fixture**
+  architecture on the test host. The current x64 fixture needs x64 CRTs even
+  when the broker/helper are ARM64.
+- First builds need access to the locked NuGet/npm dependencies. Existing
+  restored outputs can be reused; do not install Windows features, change
+  policies, or acquire elevation just to compile/package.
+
+PowerShell 7 applies to this spike's packaging and focused packaging tests,
+not every test in the repository. The main guest unit checks deliberately
+use **Windows PowerShell 5.1** for `TypeLibConverter` and
+`ITypeLibImporterNotifySink`, which are absent from PowerShell 7/.NET 10.
+Do not replace those test subprocesses with `pwsh` or interpret the packaging
+tests below as full-repository test coverage.
+
+From the repository root, in an ordinary-user PowerShell terminal:
+
+```powershell
+Set-Location .\spike\mxc-visual
+$ErrorActionPreference = 'Stop'
+[Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+[Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture
+dotnet --info
+node -p "process.version + ' ' + process.arch"
+npm ci  # first setup, or after the lockfile changes
+```
+
+`OSArchitecture` describes Windows; `ProcessArchitecture` describes this
+PowerShell process. On ARM64 Windows an emulated x64 terminal can report
+`X64` for the latter. The packager defaults to the **OS** architecture, not
+the shell architecture; use an explicit RID for reproducible/cross builds.
+`arm64` means 64-bit ARM, not `win-arm`/32-bit ARM.
+
+| Target Windows | Broker / worker / helper RID | Current WinUI fixture | Native Full-session eligibility |
+|---|---|---|---|
+| x64 | `win-x64` | `win-x64`, native | **Blocked**: x64 private credential ABI not qualified |
+| ARM64 | `win-arm64` | `win-x64`, explicit Windows x64 emulation | Only with matching credential ABI and required exports; staged testing only |
+
+The fixture project deliberately targets x64 today. Do not change only its
+RID to ARM64 while retaining x64 `PlatformTarget` or copy x64 native DLLs into
+an ARM64 fixture. The packager can check a separately prepared native ARM64
+fixture, but the sample's native ARM64 build/run is not established here.
+
+### 2. Build the fixture, then package the three native components
+
+The broker uses the **unpackaged** fixture, not an installed/signed MSIX. A
+fresh build needs the sample's Windows App SDK/Windows SDK build-tool packages;
+`dotnet restore --locked-mode` uses its committed lockfile. Skip restore if
+the same dependencies are already restored:
+
+```powershell
+dotnet restore ..\..\samples\WinUI\HelloWinUI.csproj --locked-mode
+if ($LASTEXITCODE -ne 0) { throw 'Fixture restore failed' }
+dotnet publish ..\..\samples\WinUI\HelloWinUI.csproj -c Release -p:Platform=x64 -r win-x64 --no-restore -o ..\..\samples\WinUI\bin\unpackaged
+if ($LASTEXITCODE -ne 0) { throw 'Fixture publish failed' }
+```
+
+This does not launch the app, sign/install an MSIX, or provision a session.
+Use the complete publish directory (including XBF/PRI and native DLLs).
+The sample's `build.ps1` additionally copies the VS C++ x64 release CRT and
+builds/signs an MSIX; that route requires its documented VS tools and `winapp`,
+but MSIX packaging/signing is unnecessary for this spike. A plain publish
+without app-local CRTs is accepted with a warning and records
+`fixtureVcRuntime: "system-required"`; otherwise it records `"app-local"`.
+The package validator does not prove that the target host has the system CRT.
+
+Choose **one** package command, or run both sequentially to cross-build:
+
+```powershell
+# x64 payload; no x64 private-ABI enablement is implied.
+$package = & .\broker-package.ps1 -RuntimeIdentifier win-x64 | Select-Object -Last 1
+
+# ARM64 payload with the existing x64 fixture under Windows emulation.
+$package = & .\broker-package.ps1 -RuntimeIdentifier win-arm64 -AllowX64FixtureEmulation | Select-Object -Last 1
+```
+
+Each command publishes `broker\FullBroker.csproj`, `headless\HeadlessSpike.csproj`
+and `helper\CaptureHelper.csproj` in order, copies the fixture, checks EXE
+machine types, dependency RIDs, runtime configuration and fixture dependencies,
+then writes the SHA-256 manifest. It never installs or starts a service.
+Output is a new `bin\broker-package-<RID>-<UTC timestamp>\` directory:
+
+```text
+manifest.json
+broker\SandboxMcp.FullBroker.exe  (+ managed/runtime configuration files)
+broker\package-architecture.json (hashed architecture/runtime metadata)
+worker\HeadlessSpike.exe         (+ managed/runtime configuration files)
+helper\CaptureHelper.exe         (+ managed/runtime configuration files)
+fixture\HelloWinUI.exe           (+ the entire unpackaged fixture)
+```
+
+The hashed `broker\package-architecture.json` records the target/fixture RIDs,
+`"native"` or `"x64-emulation"`, and the fixture CRT requirement. The installer's
+strict schema-1 manifest remains unchanged (`schema` and `files` only).
+Without the explicit emulation switch, a mismatched fixture fails **before**
+publishing. An ARM64 fixture is never accepted for an x64 package. Unsupported
+RIDs, mixed native components and reused output directories fail closed.
+`-FixtureDirectory <directory>` selects an existing complete fixture;
+`-Output <new-directory>` selects a fresh output. A failed publish leaves an
+incomplete directory **without** a manifest: preserve its diagnostics and use
+a new directory for the retry, never install it.
+
+For separate development builds (not an installable package):
+
+```powershell
+$rid = 'win-arm64' # or win-x64; these three components always use the same RID
+dotnet publish .\broker\FullBroker.csproj -c Release -r $rid --self-contained false -o "bin\$rid\broker"
+dotnet publish .\headless\HeadlessSpike.csproj -c Release -r $rid --self-contained false -o "bin\$rid\headless"
+dotnet publish .\helper\CaptureHelper.csproj -c Release -r $rid --self-contained false -o "bin\$rid\helper"
+```
+
+Check each exit code before continuing. Do not run SDK builds/publishes
+concurrently against the same checkout: restore/intermediate files are shared
+even when the final output directories differ. Coordinate with anyone building
+an install candidate. Do not overwrite packages a running broker is using.
+
+### 3. File-only verification, then read-only host diagnosis
+
+These commands do not call experimental APIs, use the client workflow lock,
+install a service, or require the target architecture's runtime:
+
+```powershell
+.\broker-package.ps1 -VerifyPackage $package
+pwsh -NoProfile -File .\test\broker-package.test.ps1
+```
+
+Offline verification rechecks architecture metadata and every file hash.
+`nativeCompatibilityChecked: false` is intentional. The focused tests use
+synthetic files and a mocked publisher; they never invoke `dotnet` or Windows
+session/account operations.
+
+On the **matching target host**, with its matching .NET runtime:
+
+```powershell
+$broker = Join-Path $package 'broker\SandboxMcp.FullBroker.exe'
+& $broker doctor
+# Only after doctor is eligible for staged testing:
+& $broker verify-package $package
+```
+
+Unlike the PowerShell file-only verifier, the broker's `verify-package` also
+requires native host compatibility. `doctor` checks exports/binary identity,
+not session lifecycle safety, and exits nonzero when blocked:
+
+| Code | Meaning / next step |
+|---|---|
+| `experimental_apis_missing` | Required exports unavailable. Update Windows/restart if requested, then check again; availability depends on build/channel. |
+| `architecture_not_validated` | APIs may exist, but this process architecture is not qualified. x64 needs an inspected **x64** IsoSessionCore ABI and separately approved evidence on a genuine x64 Windows host. ARM64 x64 emulation is not that evidence. |
+| `experimental_build_not_validated` | The undocumented credential ABI's inspected binary identity changed. Stop; obtain a qualified release, not a bypass. |
+| `experimental_available` | Required exports and inspected private credential ABI are present. Available for staged testing, **not validated** lifecycle behavior or production/native-safety certification. |
+
+Missing exports take precedence over architecture diagnostics. Do not invent
+an x64 hash, copy/downgrade system DLLs, disable gates, or remove the credential
+pin. The WTS/service availability gate checks required exports with
+`NativeLibrary.TryGetExport`; WTS/internal service DLLs are **not** hash-pinned.
+Only the undocumented IsoSessionCore credential ABI retains an exact SHA-256
+pin, alongside the ARM64 process-architecture guard.
+A Windows update can legitimately change service implementations;
+rerun diagnosis and staged qualification after servicing. A change to
+IsoSessionCore still blocks the private call until its ABI is re-established.
+See [the update qualification plan](../../docs/windows-update-qualification.md).
+
+### 4. Explicit one-time native UAC install, then one ordinary-user run
+
+**Stop here unless the test-host owner explicitly approves native testing.**
+Read the crash warning above first. Package validation alone is not approval.
+When updating an existing installation, coordinate a quiet window with no
+live client/batch, inspect its status, and reconcile pending work before any
+update. Do not update/uninstall as a second workflow owner.
+
+```powershell
+# Deliberate privileged action: one Windows UAC prompt, same owning account.
+& $broker install $package
+if ($LASTEXITCODE -ne 0) { throw 'Installation did not complete; inspect the result before retrying' }
+
+# Ordinary user: inspect the INSTALLED broker (not necessarily your latest build).
+node broker-client.mjs status
+Get-Content "$env:ProgramFiles\SandboxMcpFullBroker\current.json"
+Get-FileHash "$package\manifest.json" -Algorithm SHA256 # compare with current.json's release
+# Only when ready with no pending/uncertain work:
+node broker-client.mjs run-fixture
+node broker-client.mjs status
+```
+
+The System service belongs to the installing account. Elevation as a different
+administrator is unsupported. Subsequent runs need no UAC. Compare installed
+status and `current.json` release with the intended package rather than assuming a fresh build
+changed the service. Single-run evidence is written to
+`evidence\broker-<request-id>\`; inspect `visual\` before/after PNGs,
+`broker-result.json` and `client-record.json`. Confirm distinct requested UI
+states, authorization checks and account/session/profile cleanup, not just
+process exit. Preserve failed evidence.
+
+`status` is a read-only broker operation; the Node wrapper may initialize its
+local state directory. `doctor` diagnoses the binary you invoked. Neither
+creates or recovers sessions. **`recover` is not read-only**: it tears down owned
+pending sessions/accounts. Run `node broker-client.mjs recover` only in an
+approved, exclusive recovery window. Never delete uncertain ownership records
+to make the status look clean.
+
+### 5. Only then consider a coordinated grid and local viewer
+
+After an approved single run and confirmed cleanup, the next **separately
+approved** native step is three coordinated sessions, not arbitrary 4/8/16
+concurrency. Use a fresh evidence directory:
+
+```powershell
+# Terminal 1: preparation and read-only viewer do not create native sessions.
+node variant-run.mjs --prepare evidence\grid-attempt-1
+node camera-grid.mjs evidence\grid-attempt-1
+# Open the printed capability-scoped loopback URL; keep this terminal running.
+
+# Terminal 2, same spike directory: this starts the approved native batch.
+node variant-run.mjs evidence\grid-attempt-1
+node broker-client.mjs status
+```
+
+Inspect the final `report.json`, `report.md`, per-variant frames and cleanup.
+Keep the viewer URL private; stop only your viewer process when finished.
+The viewer can reopen a completed batch without rerunning native work; recorded
+tiles are not live sessions. The keep bar remains 30 frames/member, average
+>=0.9fps, maximum gap <=2000ms and >=20 seconds common coverage. Larger viewer
+layouts/replay do not establish native capacity or make failed batches pass.
+
+Do not run `test\broker-client-lock.test.mjs` or a broad spike test glob while
+live workflows are active: that test deliberately acquires the real owner lock.
+Use focused file-only tests during live work; reserve full offline suites for
+an agreed quiet window. The historical experiments below are **not** an
+automatic setup checklist.
+
+## Viewer and historical experiments
 
 The viewer has compact fit-to-count layouts for 4/8/16 recorded image tiles
 and semantic theme-token support with system-appearance fallback. Detailed
@@ -271,9 +529,9 @@ the current Windows account. The first protocol supports only the fixed WinUI
 fixture, status, result retrieval, recovery and acknowledgement.
 
 ```powershell
-# Requires the existing WinUI fixture, .NET 10 SDK/Desktop runtime and this
-# exact validated Windows ARM64 DLL set. Produces a new package each time.
-$package = & .\broker-package.ps1 | Select-Object -Last 1
+# ARM64 example; see the setup guide for x64 builds and private-ABI limits.
+# The current fixture is x64 and runs under Windows emulation.
+$package = & .\broker-package.ps1 -RuntimeIdentifier win-arm64 -AllowX64FixtureEmulation | Select-Object -Last 1
 & "$package\broker\SandboxMcp.FullBroker.exe" verify-package $package
 
 # Explicit approval required: one UAC install/update, automatic System service.
@@ -322,13 +580,19 @@ cannot invent that ID or safely delete an unknown account: the uncertain record
 is retained and further runs require reconciliation. A failed or ambiguous
 response is never retried as a fresh create automatically.
 
-The broker fails closed when any pinned experimental Windows DLL changes.
+The broker fails closed for an unqualified process architecture or a changed
+undocumented IsoSessionCore credential ABI. WTS exports are checked; WTS and
+internal service DLLs are not hash-pinned.
 It is not a stable Windows API contract, a multi-user service, a generic
 System process launcher, or a verified parallel Full-session farm.
 Installation, native IPC, and repeated no-UAC execution must be validated on
 the target host; passing local tests alone is not that proof.
 
 ### Installed-host validation (2026-11-09)
+
+The original release below used a five-DLL hash gate. That is historical:
+the current export-based availability check and private-credential-only hash
+pin are described in the setup guide above.
 
 With explicit user approval, release
 `814A137226D9485CEA0F50B1B1EBEC6B9D4D4742487D8D5CA846D8F52673EAF5`
@@ -403,7 +667,7 @@ or an ordinary browser; no new canvas extension is required.
 ```powershell
 # Build the changed sample without running the packaging/signing steps:
 dotnet publish ..\..\samples\WinUI\HelloWinUI.csproj -c Release -p:Platform=x64 --no-restore -o ..\..\samples\WinUI\bin\unpackaged
-$package = & .\broker-package.ps1 | Select-Object -Last 1
+$package = & .\broker-package.ps1 -RuntimeIdentifier win-arm64 -AllowX64FixtureEmulation | Select-Object -Last 1
 & "$package\broker\SandboxMcp.FullBroker.exe" doctor
 # Explicit approval required for the privileged installed-service update:
 & "$package\broker\SandboxMcp.FullBroker.exe" install $package
@@ -429,8 +693,10 @@ theme, display setting or initial-program allowlist is changed.
 experimental API exports from an unvalidated build/architecture. Missing-API
 guidance recommends current Windows updates and a restart when requested.
 The latest stable Windows is **not guaranteed** to expose these experimental
-APIs; a newer binary set still requires a validated broker release. The
-checks do not recommend copying DLLs, disabling gates or removing ABI pins.
+APIs. An uninspected private credential ABI or architecture remains blocked;
+ordinary WTS/service DLL servicing does not require the old five-DLL hashes.
+The ready code is `experimental_available`, not a validated-lifecycle verdict.
+The checks do not recommend copying DLLs, disabling gates or removing ABI pins.
 
 The coordinated path has local regression coverage but its runtime outcome
 must come from the generated batch evidence, not from these instructions.
