@@ -14,7 +14,9 @@
     "smoke": "node test/smoke.js",
     "e2e": "node test/smoke.js && node test/offline.js",
     "package:win": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package.ps1",
+    "package:bun:win": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-bun.ps1",
     "test:package": "node test/package-smoke.js",
+    "test:package-source": "node test/package-source-smoke.js",
     "test:plugin": "node test/plugin-smoke.js"
   },
   "files": [
