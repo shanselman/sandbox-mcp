@@ -12,7 +12,7 @@ if (process.platform !== 'win32') throw new Error('The portable package smoke te
 const archive = process.argv[2];
 if (!archive) throw new Error('Usage: node test/package-smoke.js <portable-package.zip>');
 
-const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-mcp-package-'));
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-mcp package '));
 const unpacked = path.join(temp, 'unpacked');
 fs.mkdirSync(unpacked);
 const systemRoot = process.env.SystemRoot || 'C:\\Windows';
@@ -24,10 +24,14 @@ const expand = spawnSync(ps, [
 assert.equal(expand.status, 0, `Could not extract package: ${expand.stderr || expand.stdout}`);
 
 const node = path.join(unpacked, 'node.exe');
-const cli = path.join(unpacked, 'sbx.cmd');
+const bun = path.join(unpacked, 'sbx.exe');
+const compiled = fs.existsSync(bun);
+for (const launcher of ['sbx.cmd', 'sandbox-mcp.cmd']) {
+  assert.ok(fs.existsSync(path.join(unpacked, launcher)), `Package launcher ${launcher} is missing.`);
+}
 const packageMetadata = JSON.parse(fs.readFileSync(path.join(unpacked, 'package.json'), 'utf8'));
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-for (const directory of ['src', 'agent', 'skills', 'docs']) {
+for (const directory of [...(compiled ? [] : ['src']), 'agent', 'skills', 'docs']) {
   const source = path.join(sourceRoot, directory);
   for (const relative of fs.readdirSync(source, { recursive: true })) {
     const original = path.join(source, relative);
@@ -37,17 +41,31 @@ for (const directory of ['src', 'agent', 'skills', 'docs']) {
     const digest = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
     assert.equal(digest(packaged), digest(original), `Packaged ${directory}\\${relative} differs from the tested source.`);
   }
-  for (const relative of ['README.md', 'LICENSE', 'package.json']) {
-    assert.deepEqual(fs.readFileSync(path.join(unpacked, relative)), fs.readFileSync(path.join(sourceRoot, relative)),
-      `Packaged ${relative} differs from the tested source.`);
-  }
-  assert.match(fs.readFileSync(path.join(unpacked, 'BUILD-INFO.txt'), 'utf8'), /Source commit: [a-f0-9]{40}/);
 }
-assert.ok(fs.existsSync(node), 'Bundled Node.js runtime is missing.');
-assert.ok(fs.existsSync(path.join(unpacked, 'NODE-LICENSE.txt')), 'Node.js license is missing.');
+for (const relative of ['README.md', 'LICENSE', 'package.json']) {
+  assert.deepEqual(fs.readFileSync(path.join(unpacked, relative)), fs.readFileSync(path.join(sourceRoot, relative)),
+    `Packaged ${relative} differs from the tested source.`);
+}
+const buildInfo = fs.readFileSync(path.join(unpacked, 'BUILD-INFO.txt'), 'utf8');
+assert.match(buildInfo, /Source commit: [a-f0-9]{40}/);
+if (compiled) {
+  assert.match(buildInfo, /Bundled runtime: Bun /);
+  for (const removed of ['src', 'node_modules', 'node.exe']) {
+    assert.ok(!fs.existsSync(path.join(unpacked, removed)), `Compiled package must not contain ${removed}.`);
+  }
+  assert.ok(fs.existsSync(path.join(unpacked, 'BUN-LICENSE.md')), 'Bun license is missing.');
+  assert.ok(fs.existsSync(path.join(unpacked, 'DEPENDENCY-LICENSES')), 'Dependency notices are missing.');
+} else {
+  assert.match(buildInfo, /Bundled runtime: Node.js /);
+  assert.ok(fs.existsSync(node), 'Bundled Node.js runtime is missing.');
+  assert.ok(fs.existsSync(path.join(unpacked, 'NODE-LICENSE.txt')), 'Node.js license is missing.');
+  for (const dependency of ['@modelcontextprotocol/sdk', 'zod']) {
+    assert.ok(fs.existsSync(path.join(unpacked, 'node_modules', dependency, 'package.json')),
+      `MCP runtime dependency ${dependency} is missing.`);
+  }
+}
 assert.ok(fs.existsSync(path.join(unpacked, 'agent', 'agent.ps1')), 'Guest agent is missing.');
 assert.ok(fs.existsSync(path.join(unpacked, 'skills', 'windows-sandbox-app-test', 'SKILL.md')), 'Agent skill is missing.');
-assert.ok(fs.existsSync(path.join(unpacked, 'node_modules', '@modelcontextprotocol', 'sdk', 'package.json')), 'MCP runtime dependencies are missing.');
 assert.ok(fs.existsSync(path.join(unpacked, 'docs', 'hello-after-test.png')), 'README image resource is missing.');
 
 const isolatedPath = [
@@ -56,8 +74,10 @@ const isolatedPath = [
 ].join(path.delimiter);
 const env = { ...process.env, PATH: isolatedPath };
 const cmd = path.join(systemRoot, 'System32', 'cmd.exe');
-const where = spawnSync(path.join(systemRoot, 'System32', 'where.exe'), ['node'], { env, encoding: 'utf8' });
-assert.equal(where.status, 1, `Host Node is still visible on the isolated PATH: ${where.stdout}`);
+for (const runtime of ['node', 'bun']) {
+  const where = spawnSync(path.join(systemRoot, 'System32', 'where.exe'), [runtime], { env, encoding: 'utf8' });
+  assert.equal(where.status, 1, `Host ${runtime} is still visible on the isolated PATH: ${where.stdout}`);
+}
 const invokeCli = (...args) => spawnSync(cmd, ['/d', '/c', `sbx.cmd ${args.join(' ')}`], {
   cwd: unpacked, env, encoding: 'utf8', timeout: 90_000,
 });
@@ -80,11 +100,11 @@ let report;
 try { report = JSON.parse(doctor.stdout); } catch { assert.fail(`doctor --json did not print JSON: ${doctorOutput}`); }
 assert.ok(Array.isArray(report.checks) && report.checks.length > 0, 'doctor --json did not return structured checks.');
 assert.equal(typeof report.ok, 'boolean');
-assert.equal(typeof report.facts.node, 'string', 'doctor did not report the bundled Node runtime.');
+assert.equal(typeof report.facts.node, 'string', 'doctor did not report the runtime Node compatibility version.');
 assert.equal(doctor.status, report.ok ? 0 : 1, 'doctor exit code does not match readiness.');
 console.log(`doctor on this machine: ${report.ok ? 'ready' : 'not ready'} ${JSON.stringify(report.facts)}`);
 
-const server = spawn(node, ['src/server.js'], { cwd: unpacked, env, stdio: ['pipe', 'pipe', 'pipe'] });
+const server = spawn(cmd, ['/d', '/c', 'sandbox-mcp.cmd'], { cwd: unpacked, env, stdio: ['pipe', 'pipe', 'pipe'] });
 let stderr = '';
 server.stderr.setEncoding('utf8').on('data', (data) => { stderr += data; });
 const lines = createInterface({ input: server.stdout });
@@ -127,7 +147,7 @@ try {
   assert.deepEqual(tools.result.tools.map((tool) => tool.name).sort(), expectedTools,
     'Packaged MCP tool surface differs from the tested source.');
   assert.ok(stderr.includes('ready'), 'MCP startup diagnostics were not sent to stderr.');
-  console.log('Portable package smoke test passed (CLI without Node on PATH, structured doctor, MCP stdio).');
+  console.log(`Portable ${compiled ? 'Bun' : 'Node'} package smoke test passed (both launchers, paths with spaces, no host Node/Bun on PATH, structured doctor, MCP stdio).`);
 } finally {
   server.stdin.end();
   await Promise.race([

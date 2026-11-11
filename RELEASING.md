@@ -10,11 +10,15 @@ Commit intended source/docs/screenshots and build with `npm run package:win`. Fo
 Record the full commit and ZIP SHA256 alongside real run/report paths. A preview is not a published release;
 do not imply that `/releases/latest` contains an unpublished build.
 
-Run `node test\package-smoke.js <zip>` to compare shipped source/agent/skill bytes and CLI/MCP surfaces.
-Extract that exact ZIP and run `test\integration.js` with its bundled `node.exe`, a fresh isolated
+Run `node test\package-smoke.js <zip>` for either the Node or Bun package. It checks the appropriate
+runtime layout, compares shipped resources (and source files for Node), and tests CLI/MCP through
+`sbx.cmd` and `sandbox-mcp.cmd` with host Node and Bun absent from PATH.
+Extract that exact ZIP and run `test\integration.js` using a Node test driver, a fresh isolated
 `SANDBOX_MCP_HOME`, `SANDBOX_MCP_TEST_ROOT`, `SANDBOX_MCP_TEST_SHA` and
 `SANDBOX_MCP_EXPECT_NO_HOST_NODE=1`. Keep Windows system directories and the WindowsApps `wsb.exe` alias on
-PATH but remove host Node. Verify owned-guest teardown. Hosted CI cannot provide this real desktop proof.
+PATH but remove host Node and Bun. The driver can be started by its absolute path; application processes
+use the extracted package's two `.cmd` launchers. With `SANDBOX_MCP_TEST_ROOT` unset, the integration test
+continues to run the source application. Verify owned-guest teardown. Hosted CI cannot provide this real desktop proof.
 The compatibility screenshots and observations must describe tested builds, not unmeasured framework promises.
 After an authorized feature-branch push, `gh workflow run release.yml --ref <branch>` provides a hosted build
 without publishing. The workflow names its ZIP as a feature preview, includes a `.sha256` sidecar and source

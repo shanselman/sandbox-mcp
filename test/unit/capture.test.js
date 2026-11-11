@@ -29,8 +29,6 @@ test('capture filenames cannot read or delete an outside tripwire or follow repa
   }
   fs.symlinkSync(root, path.join(directory, 'linked'), 'junction');
   assert.throws(() => captureFile(path.join(directory, 'linked'), 'tripwire.png'), /reparse point/);
-  fs.symlinkSync(tripwire, path.join(directory, 'linked.png'));
-  assert.throws(() => captureFile(directory, 'linked.png'), /reparse point/);
   assert.equal(fs.readFileSync(tripwire, 'utf8'), 'untouched');
   fs.writeFileSync(path.join(directory, 'valid.preview.png'), 'png');
   assert.equal(captureFile(directory, 'valid.preview.png'), path.join(directory, 'valid.preview.png'));
@@ -38,6 +36,24 @@ test('capture filenames cannot read or delete an outside tripwire or follow repa
     'a reparse ancestor is rejected, not just the final directory');
   fs.symlinkSync(path.join(root, 'missing-target'), path.join(directory, 'dangling'), 'junction');
   assert.throws(() => captureFile(path.join(directory, 'dangling'), 'tripwire.png'), /reparse point/);
+});
+
+test('capture rejects a file symlink without modifying its target', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sbx-capture-symlink-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const directory = path.join(root, 'screenshots');
+  fs.mkdirSync(directory);
+  const tripwire = path.join(root, 'tripwire.png');
+  fs.writeFileSync(tripwire, 'untouched');
+  try {
+    fs.symlinkSync(tripwire, path.join(directory, 'linked.png'), 'file');
+  } catch (error) {
+    if (process.platform !== 'win32' || error.code !== 'EPERM') throw error;
+    t.skip('Windows denied file symlink creation; rerun elevated or with Developer Mode enabled.');
+    return;
+  }
+  assert.throws(() => captureFile(directory, 'linked.png'), /reparse point/);
+  assert.equal(fs.readFileSync(tripwire, 'utf8'), 'untouched');
 });
 
 test('capture allows canonical and short directory spellings without weakening file confinement', (t) => {
