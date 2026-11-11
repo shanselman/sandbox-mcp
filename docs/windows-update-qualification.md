@@ -189,6 +189,23 @@ It permits staged testing; it does not certify Windows behavior. Broker package
 file hashes, protected installation, owner-only IPC and credential/session
 ownership checks are unchanged.
 
+This export-gated broker was installed and used for the subsequent
+profile-classification experiment. With the new LSM but before classification,
+Explorer still failed at startup. With the classification patch, 60 observed
+lifecycles had no agent-attributed startup crash events. Two longer attempts
+stopped for separate collector/cadence failures, so they are not reported as
+passing 31-grid qualifications. See the
+[profile-classification results](shell-startup-crash-repro.md#profile-classification-candidate-under-live-test)
+for exact outcomes, the fixed collector defect and a residual-directory
+attribution limitation.
+
+Build/package support now includes `win-arm64` and `win-x64`, with explicit
+architecture verification and opt-in x64 fixture emulation on ARM64. Both
+packages built and their 538 files verified. The x64 broker passed 101 offline
+checks under emulation; its read-only doctor still refuses unqualified native
+x64 execution. A successful x64 build is not evidence that the private
+credential ABI is valid on a native x64 Windows installation.
+
 ## What happens when Windows updates today
 
 1. The broker checks required exports, supported architecture and the private

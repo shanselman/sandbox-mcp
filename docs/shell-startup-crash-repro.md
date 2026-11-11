@@ -147,6 +147,47 @@ after it. No timing threshold was relaxed and no historical evidence was
 repaired. A new qualification directory was used to restart the full run
 with the corrected ordinary-user client; no broker/UAC update was needed.
 
+#### Latest result: startup faults absent, strict cadence qualification failed
+
+The fresh corrected-client attempt passed five grids and stopped on the sixth.
+All 90 images in that grid were valid and all 90 were collected. However,
+two streams missed the unchanged 2,000-ms maximum-gap requirement:
+
+| Variant | Maximum gap | Capture duration at the stall | Result |
+|---|---:|---:|---|
+| Light | 4,011 ms | 3,022 ms | Failed cadence |
+| Dark | 3,779 ms | 2,789 ms | Failed cadence |
+| Enlarged dark | 1,066 ms | No matching long stall | Passed cadence |
+
+The two slow captures completed at approximately the same instant,
+20:58:57 PST on November 10. Recorded overlap was 27,180 ms and cleanup
+completed. These timings locate the delay in capture, not in the now-fixed
+collector backlog handling; they do not establish the underlying scheduling,
+window-rendering or graphics cause. The attempt was not retried blindly and
+the threshold was not weakened.
+
+Across both classified-profile attempts there were **60 distinct completed
+agent/session lifecycles**, **zero agent-attributed Application Error events**,
+and no remaining tracked accounts, `Win32_UserProfile` entries or ProfileList
+registry keys. Only the original services/console sessions remained and the
+host boot was unchanged. This is strong evidence that the classification
+change addresses the observed Explorer/ShellHost startup failures in this
+workload, but **neither 31-grid qualification completed**: the first stopped
+on the collector defect and the second on the capture timing failure.
+
+One unusual machine-prefixed profile directory remained on disk. Its owner
+ACL could not be read without additional privileges, so it was not attributed
+to a run or deleted. The absence of tracked account/profile records must not
+be presented as proof that every profile directory was removed. Its naming,
+ownership and cleanup are a separately recorded follow-up.
+
+Final offline verification after the collector fix passed all **101 broker
+checks, 50 spike Node tests, 112 repository unit tests, and 13 architecture
+packaging tests**. All 538 installed candidate files still matched the
+verified package. There were no further live attempts after the cadence
+failure. These passing offline checks do not override the failed live timing
+verdict.
+
 `Kind=Full` and `InitialProgram=null` remained unchanged; the deferred
 InitialProgram suggestion below was not used. No AppX re-registration or
 host-wide shell/display setting was changed.
