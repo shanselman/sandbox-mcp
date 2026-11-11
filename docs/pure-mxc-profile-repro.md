@@ -1,5 +1,11 @@
 # Tiny SDK-only companion-profile reproduction
 
+Filed as [microsoft/mxc#1727](https://github.com/microsoft/mxc/issues/1727)
+(IsolationSession: deprovision returns success but retains an unloaded companion profile):
+an SDK-only cleanup-retention report with the minimal code below and the
+documented/source-verified lifecycle sequence. It asks which layer owns the
+behavior rather than assuming an MXC implementation defect.
+
 The reproduction is
 [`spike/mxc-visual/mxc-profile-repro.mjs`](../spike/mxc-visual/mxc-profile-repro.mjs).
 It creates **one** IsolationSession, runs only `whoami`, stops it and
@@ -43,7 +49,8 @@ newProfilesAfterDeprovision:
 An independent query **after the Node process exited** confirmed that the
 original provisioned account was gone, no test session was active, and the
 new companion profile, ProfileList key and directory remained. Its HKU hive
-was not loaded. The global companion-profile count increased **184 -> 185**;
+was not loaded. A further check still found it **186 seconds after Node
+exited**. The global companion-profile count increased **184 -> 185**;
 those global totals include older experiments and are not an attribution of
 all existing profiles to this reproduction. The single new profile is the
 before/after delta.
@@ -78,3 +85,8 @@ is the retained companion intentional/deferred, and if so what retention and
 supported cleanup guarantee applies? Otherwise, should Windows `RemoveUserAsync`
 or MXC remove it or return a cleanup warning? Do not assume the unpublished
 Windows implementation's behavior from the SDK wrapper alone.
+
+The subsequently supplied checkout at `37a3e9319d4369706f736a493bd22890d3d1d8ec`
+(November 10) was checked too: its manager, state-aware adapter and TypeScript
+lifecycle example were byte-identical to the inspected files linked above.
+Thus this was not just a conclusion from the older cached checkout.

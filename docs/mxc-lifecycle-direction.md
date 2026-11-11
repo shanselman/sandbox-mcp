@@ -64,6 +64,16 @@ should use only the published provision/start/execute/stop/deprovision path,
 observe DWM and actual WinUI pixels, and inventory both normal and companion
 profiles before/after. This research did not launch that experiment.
 
+**Subsequent controls:** that SDK-only WinUI experiment was then run on the
+updated host. UIA succeeded, but DWM/composition was absent and the captured
+WinUI client stayed blank. SDK teardown returned no warnings, yet one unloaded
+companion profile remained. A second, much smaller `whoami`-only SDK control
+reproduced the profile retention without any GUI/capture/custom broker code.
+See the [tiny reproduction and documented cleanup trace](pure-mxc-profile-repro.md).
+The hybrid is therefore not a necessary condition for this observed cleanup
+behavior; responsibility between MXC and the Windows implementation remains
+unresolved.
+
 ## Related upstream work and visibility limits
 
 The cached `origin/feature/isolation-session-internal` head is
@@ -86,6 +96,14 @@ snapshot is from November 9 and the branch snapshot from November 5; public
 search indexing can lag. Therefore this is **not an exhaustive current
 branch/PR inventory**, and does not rule out newer or private engineering work.
 No token/account workaround was attempted.
+
+The user later supplied a newer checkout at
+`37a3e9319d4369706f736a493bd22890d3d1d8ec` (November 10); the relevant lifecycle
+manager, adapter and example are unchanged. For the cleanup issue filing only,
+the user explicitly approved using their refreshed `gh` login instead of the
+session's stale injected token. That account's identity and Microsoft SSO
+access were verified before filing the [minimal cleanup report](pure-mxc-profile-repro.md).
+This did not refresh the earlier complete branch/PR inventory.
 
 ## Recommended boundary
 

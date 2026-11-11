@@ -181,6 +181,21 @@ to a run or deleted. The absence of tracked account/profile records must not
 be presented as proof that every profile directory was removed. Its naming,
 ownership and cleanup are a separately recorded follow-up.
 
+**Subsequent audit correction:** that follow-up found **60 retained companion
+profiles**, with 60 ProfileList keys and directories, all unloaded. Fifty-nine
+directories were hidden. The original audits matched only the provisioned
+`S-1-5-21-...` identities; Windows Profile Service events attribute the retained
+profiles to companion `S-1-5-110-...` identities. Thus "no remaining tracked
+profiles" did **not** mean complete profile cleanup. The visible `.000` path
+is attributable through profile-service events, without reading its protected
+contents; retained hidden profiles and short-name reuse are a strong lead for
+the suffix, not a fully established Windows naming contract.
+
+Further live batches were held once this gap was established. No companion
+profile was deleted and no ACL was changed. Supported cleanup and explicit
+handling of SDK deprovision warnings are required before treating the lifecycle
+as fully cleaned or continuing repeated native qualification.
+
 Final offline verification after the collector fix passed all **101 broker
 checks, 50 spike Node tests, 112 repository unit tests, and 13 architecture
 packaging tests**. All 538 installed candidate files still matched the
