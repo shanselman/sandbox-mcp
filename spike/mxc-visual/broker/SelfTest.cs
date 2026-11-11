@@ -49,19 +49,22 @@ internal static class SelfTest
             if (result.Ready || result.Code != "experimental_apis_missing" || !result.Message.Contains("latest available Windows updates")
                 || !result.Message.Contains("not a guarantee")) throw new Exception("Missing-API guidance incorrect");
         });
-        Check("newer unvalidated binaries fail closed", () =>
+        Check("uninspected private credential ABI still fails closed", () =>
         {
-            var result = Platform.Classify("Arm64", "Windows newer", [], ["lsm.dll"]);
-            if (result.Ready || result.Code != "experimental_build_not_validated") throw new Exception("Unknown ABI accepted");
+            var result = Platform.Classify("Arm64", "Windows newer", [], ["IsoSessionCore.dll/architecture"]);
+            if (result.Ready || result.Code != "experimental_build_not_validated"
+                || !result.Message.Contains("credential ABI")) throw new Exception("Unknown credential ABI accepted");
         });
         Check("unsupported architecture remains explicit", () =>
         {
             var result = Platform.Classify("X64", "Windows test", [], []);
             if (result.Ready || result.Code != "architecture_not_validated") throw new Exception("Architecture accepted without validation");
         });
-        Check("validated host is ready", () =>
+        Check("available APIs permit testing without claiming validated Windows behavior", () =>
         {
-            if (!Platform.Classify("Arm64", "Windows test", [], []).Ready) throw new Exception("Validated host rejected");
+            var result = Platform.Classify("Arm64", "Windows newer", [], []);
+            if (!result.Ready || result.Code != "experimental_available"
+                || !result.Message.Contains("not proof")) throw new Exception("Availability misrepresented as native validation");
         });
         var members = new[] { "light", "dark", "dark-large" }.Select((variant, index) =>
             new GridMember(index.ToString("x32"), $"A{index}-B{index}", $"S-1-5-21-1-2-3-{1001 + index}", $"opaque-{index}", variant)).ToArray();

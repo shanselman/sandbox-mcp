@@ -99,6 +99,36 @@ deprovisioned, so querying their registrations afterward would not establish
 what existed at failure time. No AppX re-registration, shell restart, policy
 change or additional live session was performed for this research.
 
+### Profile-classification candidate under live test
+
+The user subsequently requested testing
+[#4](https://github.com/shanselman/sandbox-mcp/pull/4)
+(Classify provisioned agent profile before shell launch): the change marks
+fresh provisioned agent profiles as shell-agent profiles before Full-session
+creation. The tested patch is commit
+`fdee172bd453fb345f1de3fe359769fd45ed7637`; testing it is not a PR merge.
+
+The patch verifies that the agent's registry hive is not loaded, that its
+profile has `AgentUserProfile=1` and `ComposableAgentUserProfile=1`, and that
+`ShellAgentUserProfile` is absent. Only then does it set
+`ShellAgentUserProfile=1` and remove `ComposableAgentUserProfile`.
+These writes are scoped to the freshly provisioned, owner-verified agent SID.
+The credential is disposed if validation or a registry operation fails.
+
+On the new LSM build, before this classification change, Explorer still
+recorded a startup fail-fast in the baseline run. After an explicitly approved
+broker installation containing the exact patch, the first six fresh
+lifecycles (three singles plus a coordinated three-session grid) completed
+with **zero Application Error events attributed to their agent identities**,
+30 valid PNGs in each streamed case, and no remaining owned accounts/profiles.
+This is a promising controlled comparison on the same host/boot, not a final
+long-run verdict. A fresh 31-grid qualification was then started with an
+additional stop-on-agent-startup-error check.
+
+`Kind=Full` and `InitialProgram=null` remained unchanged; the deferred
+InitialProgram suggestion below was not used. No AppX re-registration or
+host-wide shell/display setting was changed.
+
 ### Deferred engineer suggestion: explicit InitialProgram
 
 On 2026-11-10, the user relayed this engineer suggestion verbatim:

@@ -1,17 +1,9 @@
-using System.Security.Cryptography;
 using System.Runtime.InteropServices;
 
 namespace SandboxMcp.FullBroker;
 
 internal static class Platform
 {
-    private static readonly IReadOnlyDictionary<string, string> Pins = new Dictionary<string, string>
-    {
-        ["wtsapi32.dll"] = "8602290CDA47C2A8E662A71DBC72418BE97593940B3898B8DF774AB8AC919C68",
-        ["winsta.dll"] = "F1AA026EAD78F39E0E53963B62D43CC04C7FCF2A84B73AB955C05A94C11BF653",
-        ["termsrv.dll"] = "C5F591EF4BE4A3076FD3CB03F6729AB858DD1D0B153988D68879BC1C44F3EAF0",
-        ["lsm.dll"] = "87C99331E534D8B865C33D8BD7B8B046F60CB57672DFBD0D7DAE7740C6FB12C6",
-    };
     public static void Check()
     {
         var compatibility = Inspect();
@@ -39,13 +31,9 @@ internal static class Platform
             try { missing.AddRange(names.Where(name => !NativeLibrary.TryGetExport(library, name, out _)).Select(name => module + "!" + name)); }
             finally { NativeLibrary.Free(library); }
         }
-        foreach (var (name, expected) in Pins)
-        {
-            string path = Path.Combine(Environment.SystemDirectory, name);
-            if (!File.Exists(path)) { missing.Add(name); continue; }
-            using var file = File.OpenRead(path);
-            if (Convert.ToHexString(SHA256.HashData(file)) != expected) changed.Add(name);
-        }
+        // WTS entry points have a supplied V1 declaration; internal service
+        // implementations may change with Windows servicing. Only the inferred
+        // private credential ABI still requires an inspected binary identity.
         if (File.Exists(Path.Combine(Environment.SystemDirectory, "IsoSessionCore.dll")))
         {
             try { LocalAgentCredential.CheckSupportedBuild(); }
@@ -64,8 +52,8 @@ internal static class Platform
             return new(false, "architecture_not_validated", "This experimental broker has only been validated on ARM64. A Windows update alone does not validate another architecture.", architecture, windows, missing, changed);
         if (changed.Length != 0)
             return new(false, "experimental_build_not_validated",
-                "The APIs exist, but these Windows binaries differ from the validated experimental build. Update Windows normally, then obtain a broker release validated for that build; do not remove the ABI pins or downgrade system DLLs.",
+                "The WTS APIs exist, but the undocumented IsoSessionCore credential ABI differs from the inspected build. Obtain a broker release qualified for that credential ABI; do not downgrade system DLLs. WTS and internal Windows service DLLs are not hash-pinned.",
                 architecture, windows, missing, changed);
-        return new(true, "validated", "Experimental APIs and inspected build pins are present. This is not a stable Windows API contract or proof of native lifecycle safety.", architecture, windows, missing, changed);
+        return new(true, "experimental_available", "Required experimental exports and the inspected private credential ABI are present. Eligible for staged testing, not proof of native lifecycle safety. Internal Windows service DLLs are not hash-pinned.", architecture, windows, missing, changed);
     }
 }

@@ -1,6 +1,6 @@
 # Windows updates and experimental broker distribution
 
-## Current status: a pinned research prototype
+## Current status: an export-gated research prototype
 
 This is not yet a generally installable or supported Windows product. Its
 Full-session path uses an experimental WTS API and an inferred private
@@ -52,7 +52,7 @@ Matched PDB keys (GUID followed by age) are:
 This justifies a new **ABI-inspected candidate** package for the user's
 explicitly authorized experiments. It does not prove that the Windows fix
 addresses the crash. Live qualification results must be recorded separately.
-The source now pins only this whole new set; it does not accept arbitrary
+That candidate pinned only this whole new set; it did not accept arbitrary
 new hashes, mixed releases, or the previously crashing set.
 
 ### First installation and live observation
@@ -162,16 +162,47 @@ not universal Windows stability, true monitor-DPI variants, more than three
 simultaneous native sessions, long-lived desktop soak, or a supported public
 Windows API contract.
 
+## November 10: narrow the compatibility gate
+
+The user requested export-based checks instead of requiring a new broker for
+every internal Windows service DLL change. The subsequent LSM fix changed only
+`lsm.dll` among the five earlier pins. Its SHA-256 is
+`E597E5622F7E529C3721CD8527D78218C9C3B6A280C97FEEEA0DB658DC0B33B6`;
+Authenticode verifies Microsoft Windows as signer. Matching public PDBs were
+not available, so no claim of inspecting the changed internal implementation
+is made. The caller-facing WTS DLL and credential DLL were unchanged.
+
+The broker now checks the required WTS exports using
+`NativeLibrary.TryGetExport` (the managed equivalent of `GetProcAddress`).
+It no longer hash-pins `wtsapi32`, `winsta`, `termsrv` or `lsm`. The supplied
+experimental V1 declaration still governs the call layout. Missing exports
+and unsupported runtime architecture remain explicit failures.
+
+**One exact pin remains:** `IsoSessionCore` exposes an undocumented credential
+ABI inferred from the inspected binary rather than a published header.
+Finding that export by name cannot establish its argument or ownership
+contract. It must still match an inspected implementation until an appropriate
+documented/versioned API replaces that dependency.
+
+Successful readiness now returns `experimental_available`, not `validated`.
+It permits staged testing; it does not certify Windows behavior. Broker package
+file hashes, protected installation, owner-only IPC and credential/session
+ownership checks are unchanged.
+
 ## What happens when Windows updates today
 
-1. The broker compares required exports, architecture and exact module hashes
-   during readiness and before starting work. A mismatch prevents new work.
+1. The broker checks required exports, supported architecture and the private
+   credential ABI during readiness and before starting work. A missing export,
+   unsupported architecture or changed private credential ABI prevents new work.
+   An internal Windows service DLL update alone does not require a broker update.
 2. The ordinary client checks readiness before provisioning an agent account.
    The viewer and offline replay remain usable.
 3. Keep existing journals and evidence. Do not retry create blindly or infer
    that a new kernel has recovered an interrupted operation.
-4. An engineer qualifies the new contract, publishes a matching broker
-   package and the owner explicitly installs it with UAC. The installer
+4. If the calling contract or private credential ABI changes, an engineer
+   qualifies it and publishes a broker update for the owner to install with UAC.
+   Routine Windows service updates instead need regression qualification, not
+   a hash-only broker rebuild. The installer
    requires no pending jobs, verifies package hashes and protected ownership,
    updates its existing service and checks startup.
 5. Re-run ordinary-user readiness and staged capture/cleanup checks. A package
@@ -189,12 +220,12 @@ solved by simply making creation less strict.
 | Stage | Required work and observable release gate |
 |---|---|
 | Supported API contract | Work with Windows owners on a documented/versioned credential and Full-session interface, lifecycle guarantees, supported SKU/channel/architecture and unattended-use limits. If that cannot be provided, label releases research-only or use a VM-backed adapter. |
-| Qualification registry | Publish a signed, versioned manifest of coherent exact module sets, broker protocol/package versions, architecture, provenance and separate ABI-inspected versus live-qualified status. Do not build an allowlist from the customer's current machine. |
+| Qualification registry | Publish a signed, versioned record of tested Windows module sets, broker protocol/package versions, architecture, provenance and separate API-available versus live-qualified status. Module hashes are reproducibility evidence, not universal admission requirements. Keep explicit qualification for the private credential ABI; never learn that allowlist from the customer's current machine. |
 | Qualification farm | Use disposable, recoverable test hosts. Check single lifecycle, repeated cycles, concurrent sessions, app startup/rendering, changing valid PNGs, cadence/overlap, ownership refusals and complete teardown. Retain failure receipts and reboot/crash outcomes. Qualify OS servicing transitions and interrupted-work recovery separately. One successful smoke test is not a support matrix. |
 | Distribution | Ship signed binaries and an Authenticode-signed installer through a documented release channel. Verify publisher, manifest signature, hashes, local paths and minimum protocol. Preserve owner-only IPC and administrator-protected payloads; do not make a generic elevated command endpoint. |
 | Upgrade UX | Ordinary-user doctor explains exactly which component changed, whether a qualified release exists, and the required restart/elevation. Download/preflight unelevated; perform only reviewed fixed installation operations after explicit consent. No repeated UAC for normal tests. |
 | Transactional service update | Drain/reject new work, reconcile owned jobs, refuse ambiguous state, stage immutable files, verify signatures/hashes, switch only when safe, verify health and preserve recoverable receipts. Test rollback on the same supported OS set; report incompatible OS rollback honestly. |
-| Servicing policy | Do not disable Windows Update. Detect a pending reboot or changed set, stop admitting jobs, preserve outputs and clearly mark maintenance required. Do not cache readiness across a servicing change. Define what to do if servicing interrupts active sessions with Windows owners. |
+| Servicing policy | Do not disable Windows Update. Detect pending servicing, stop admitting jobs during the servicing transition, and preserve outputs. Afterward recheck exports/credential ABI and report whether that OS set has live qualification. Do not cache readiness across a servicing change. Define interrupted-session handling with Windows owners. |
 | Support and privacy | Publish a precise tested matrix, known issues and bounded diagnostic export. Keep account identifiers, dumps, credentials and images local unless the user explicitly chooses to share them. Signing/packaging alone does not make the private API supported. |
 
 Suggested release states are **unsupported**, **ABI inspected**,
