@@ -7,7 +7,8 @@ and the Bun runtime. It replaces the shipped `src/`, `node_modules/`, and
 
 The executable supports both CLI and MCP operation. This is an additional build
 option; [package.ps1](package.ps1) still produces the original Node-based package.
-The release workflow has not been switched to Bun.
+The release workflow builds and publishes the Node package, Bun package, and
+companion Bun relinking-source archive.
 
 ## Build
 
@@ -15,17 +16,19 @@ Requirements:
 
 - Native Windows x64 and PowerShell.
 - Bun **1.4.4** on `PATH`. The script requires this exact validated release and
-  rejects other versions before building or replacing package outputs. It does
-  not install or upgrade Bun. Changing the pin requires explicit revalidation.
+  rejects other versions unless `-AllowModifiedBun` is explicitly supplied with
+  the exact Bun and WebKit source commits. It does not install or upgrade Bun.
+  Changing the pin requires explicit revalidation.
 - Git and a checkout with an identifiable `HEAD` commit.
 - Node/npm to restore the project dependencies.
-- Internet access to download the pinned Bun release's license from GitHub.
+- Internet access to download Bun's license, full LGPL texts, and dependency
+  licenses.
 
 From the repository root:
 
 ```powershell
 npm ci --omit=dev
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-bun.ps1
+npm run package:bun:win
 ```
 
 Windows Sandbox does not need to be enabled to build the package. Running sandbox
@@ -46,19 +49,28 @@ dist/
     skills/
     docs/
     DEPENDENCY-LICENSES/
+    LICENSES/
     BUN-LICENSE.md
+    RELINKING.md
     BUILD-INFO.txt
     package.json
     README.md
     LICENSE
   sandbox-mcp-win-x64-v<version>-bun.zip
   sandbox-mcp-win-x64-v<version>-bun.zip.sha256
+  sandbox-mcp-win-x64-v<version>-bun-relink-source.zip
+  sandbox-mcp-win-x64-v<version>-bun-relink-source.zip.sha256
 ```
 
 The version comes from the repository's `package.json`. Rebuilding replaces the
 Bun output folder and the ZIP/checksum for that version. The Node package and the
 earlier experimental distribution in `dist/sandbox-mcp/` are separate outputs.
-The ZIP contains the package files directly, without an enclosing directory.
+The runtime ZIP contains the package files directly, without an enclosing
+directory. The companion source archive contains the application source snapshot
+used for packaging, build script, dependency lockfile, notices, provenance, and a
+SHA-256 manifest. `RELINKING.md` in both archives identifies the exact Bun and
+WebKit commits and gives the upstream documented rebuild procedure. It also
+explains how to build with an identified modified Bun runtime.
 
 Extract the ZIP into its own directory and keep the supporting files with the
 executable. From that directory:
@@ -72,10 +84,23 @@ executable. From that directory:
 `sbx.cmd` forwards arguments to `sbx.exe`; `sandbox-mcp.cmd` invokes `sbx.exe mcp`
 for MCP over stdio. Both launchers forward the executable's exit code.
 
-`BUILD-INFO.txt` records the application and Bun versions, Git HEAD commit, build
-channel, and resource-path adjustment. The build channel defaults to
-`local-candidate`; set `SANDBOX_MCP_BUILD_CHANNEL` to override it. The script builds
-working-tree files, so the recorded HEAD does not identify uncommitted changes.
+`BUILD-INFO.txt` records the application and Bun versions, application/Bun/WebKit
+source commits, build channel, and resource-path adjustment. The build channel
+defaults to `local-candidate`; set `SANDBOX_MCP_BUILD_CHANNEL` to override it. The
+script builds working-tree files; the companion source archive is the exact
+application snapshot used, even when it contains uncommitted changes not captured
+by the recorded Git HEAD.
+
+The Bun 1.4.4 source commit is
+`38afee6c84fcf48c0edb2466aa4b27d287a59c30`; its pinned WebKit commit is
+`d6375c72affe0f70222cdcb45012b10f0bf3a9d5`. For a modified Bun build, supply
+both source commits explicitly. The script records those supplied identifiers
+but does not independently verify them against the executable:
+
+```powershell
+.\scripts\package-bun.ps1 -AllowModifiedBun `
+  -BunSourceCommit <40-hex-commit> -WebKitCommit <40-hex-commit>
+```
 
 ## How compilation works
 
@@ -107,9 +132,10 @@ The copied `src/cli.js` is compiled with:
 ```
 
 The existing CLI `mcp` command includes the server in the same executable. The
-script copies external resources, downloads Bun's license, and retains dependency
-license/notice files found under `node_modules/`. It checks the executable's
-version before preparing the ZIP and SHA256 sidecar. Temporary build files,
+script copies external resources, downloads Bun's license and the complete LGPL-2
+and LGPL-2.1 texts, and retains dependency license/notice files found under
+`node_modules/`. It checks the executable's version before preparing the runtime
+ZIP and companion source ZIP with SHA256 sidecars. Temporary build files,
 including the emitted source-map sidecar, are removed afterward.
 
 ## Experiment results
@@ -152,19 +178,23 @@ The new packaging script was subsequently run under Windows PowerShell, and its
 ZIP passed the adapted CLI/MCP package smoke test. The script itself runs only a
 version check; it does not automatically run smoke or lifecycle tests.
 
-The tracked package tests now support both distribution layouts through the same
-public launchers. From the repository root, run:
+The tracked package tests support both distribution layouts through the same
+public launchers and independently validate the relinking-source archive. From
+the repository root, run:
 
 ```powershell
 node test/package-smoke.js dist/sandbox-mcp-win-x64-v1.2.0.zip
 node test/package-smoke.js dist/sandbox-mcp-win-x64-v1.2.0-bun.zip
+node test/package-source-smoke.js dist/sandbox-mcp-win-x64-v1.2.0-bun-relink-source.zip dist/sandbox-mcp-win-x64-v1.2.0-bun.zip
 ```
 
-Substitute the current application version in the filenames. The smoke test
-extracts each ZIP into a path containing spaces, checks its runtime-specific
+Substitute the current application version in the filenames. The runtime smoke
+test extracts each ZIP into a path containing spaces, checks its runtime-specific
 layout and common resources, and exercises both `.cmd` launchers without host
-Node or Bun on `PATH`. A Node test driver and the repository dependencies are
-required to run the tests.
+Node or Bun on `PATH`. The source-package smoke test validates required files,
+all three source revisions, manifest hashes, and the full LGPL texts in both
+archives. A Node test driver and the repository dependencies are required to run
+the tests.
 
 For real guest validation, extract the ZIP, acquire the host's Sandbox coordination
 lock, and set `SANDBOX_MCP_TEST_ROOT` to that extracted directory and
@@ -182,8 +212,9 @@ paths containing spaces, with host Node and Bun absent from the application's
 
 Validation covers the tested offline lifecycle, not every command or network mode.
 MP4 output was not exercised because ffmpeg was absent from the isolated test
-PATH. `doctor` still labels Bun's Node compatibility version as Node.js. Release
-integration and a complete distribution-notice review remain separate work.
+PATH. `doctor` still labels Bun's Node compatibility version as Node.js. This
+packaging process supplies technical source and license materials; it is not a
+legal determination of license compliance.
 
 The unit suite's native file-symlink capture check requires permission to create
 Windows symbolic links. Without that permission, only this check is explicitly

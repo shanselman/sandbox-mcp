@@ -174,10 +174,12 @@ of Windows Sandbox. The observed optional-component baseline for build 26100.988
 ## Download and try it (no Node.js install)
 
 Download the **Windows x64 portable ZIP** from the [latest GitHub release](https://github.com/shanselman/sandbox-mcp/releases/latest)
-and extract it. The ZIP includes `sbx`, the MCP server, their dependencies, the guest agent and skills, and a private
-Node.js runtime. You do not need to clone the repo, install Node/npm, or add anything to PATH.
-Use `sbx.cmd` directly for CLI-only operation; you do not need an MCP client, server configuration or plugin.
-The package is built and tested on native Windows x64; ARM64 is not currently packaged.
+and extract it into its own folder. The standard ZIP bundles Node.js; releases that also offer a `-bun.zip` bundle
+the runtime into `sbx.exe`. **Either runtime ZIP is all you need**; the `-bun-relink-source.zip` is only for
+rebuilding or relinking. Both include the CLI, MCP server, guest agent and skills. You do not need to clone the repo,
+install Node, npm or Bun, or add anything to PATH. Keep the extracted files together and use `sbx.cmd` directly
+for CLI-only operation; you do not need an MCP client, server configuration or plugin. The packages are built and
+tested on native Windows x64; ARM64 is not currently packaged.
 
 Verify the ZIP against its adjacent `.sha256` file before extracting; the [agent setup guide](docs/agent-setup.md)
 does that automatically and preserves existing client configuration.
@@ -212,8 +214,8 @@ A passing run leaves `report.md`, `report.json`, screenshots and `audit.jsonl` u
 `out\recordings\<recordingId>\recording.html` and MP4 when host ffmpeg is available. `SANDBOX_MCP_HOME`
 changes the artifact root. No ffmpeg or app runtime is silently installed.
 
-For an MCP client, configure its stdio server with the full paths to the bundled runtime and server. Replace the
-example folder with the location where you extracted the ZIP:
+For an MCP client using the standard ZIP, configure its stdio server with the full paths to the bundled runtime and
+server. Replace the example folder with the location where you extracted the ZIP:
 
 ```json
 {
@@ -240,6 +242,15 @@ That is the VS Code `.vscode\mcp.json` shape. For GitHub Copilot CLI's
       "tools": ["*"]
     }
   }
+}
+```
+
+For the Bun ZIP, replace the `command` and `args` in either example with:
+
+```json
+{
+  "command": "C:\\Users\\you\\Downloads\\sandbox-mcp\\sbx.exe",
+  "args": ["mcp"]
 }
 ```
 
@@ -293,7 +304,7 @@ if it can't reach Windows Sandbox. The full list of what you need:
 - At least 4 GB of RAM (8 GB recommended), 2 CPU cores and 1 GB of free disk.
 - Running inside a VM? Turn on nested virtualization on the host first:
   `Set-VMProcessor -VMName <name> -ExposeVirtualizationExtensions $true`.
-- The portable ZIP bundles Node.js for Windows x64. If installing from source, use Node.js 20+ (`winget install OpenJS.NodeJS.LTS`).
+- Either portable ZIP includes its runtime for Windows x64. If installing from source, use Node.js 20+ (`winget install OpenJS.NodeJS.LTS`).
 
 ## Install from source
 
