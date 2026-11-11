@@ -87,6 +87,7 @@ function renderBatch(batch) {
     ].filter(Boolean).join('\n');
     tile.warning.textContent = [
       run.error ?? run.progress?.error ?? frame?.error ?? '',
+      ...(run.warnings ?? run.stream?.timingWarnings ?? []),
       run.invalidFrames?.length ? `INVALID PRESERVED IMAGES: ${run.invalidFrames.length} (excluded)` : '',
     ].filter(Boolean).join('\n');
     tile.warning.hidden = !tile.warning.textContent;

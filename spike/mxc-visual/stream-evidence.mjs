@@ -4,8 +4,8 @@ import { createHash } from 'node:crypto';
 import { summarizeStream } from './live-evidence.mjs';
 import { validatePng } from './png-evidence.mjs';
 
-export function verifyStreamEvidence(directory, stream, fixture, variant, expectedSessionId) {
-  const summary = summarizeStream(stream, fixture, variant);
+export function verifyStreamEvidence(directory, stream, fixture, variant, expectedSessionId, policy) {
+  const summary = summarizeStream(stream, fixture, variant, policy);
   if (!Number.isInteger(expectedSessionId) || expectedSessionId <= 1
     || stream.frames.some(frame => frame.sessionId !== expectedSessionId))
     throw new Error('Stream images do not belong to the expected session');

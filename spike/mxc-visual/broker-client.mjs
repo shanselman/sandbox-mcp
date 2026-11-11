@@ -7,26 +7,32 @@ import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { provisionContainer, deprovisionContainer } from '@microsoft/mxc-sdk/v1';
 import { ISO_REQUEST } from './session.mjs';
-import { atomicJson, readRecord, mergePending, copyEvidence, verifyVisualEvidence, recoverIndependent } from './broker-client-state.mjs';
-import { startLiveCollector, requireFreshLiveOutput } from './live-evidence.mjs';
+import { atomicJson, readRecord, mergePending, copyEvidence, verifyVisualEvidence, recoverIndependent, requireDeprovisionReceipt } from './broker-client-state.mjs';
+import { startLiveCollector, requireFreshLiveOutput, readBatch } from './live-evidence.mjs';
 import { verifyStreamEvidence } from './stream-evidence.mjs';
+import { capturePolicy, policyArguments, LEGACY_CAPTURE_POLICY } from './capture-policy.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const options = policyArguments(process.argv.slice(2));
+const operation = options.args[0] ?? 'status';
+const variant = operation === 'run-fixture' ? options.args[1] : undefined;
+const liveOutput = options.args[2] ? path.resolve(options.args[2]) : null;
+const gridOutput = operation === 'run-grid' && options.args[1] ? path.resolve(options.args[1]) : null;
+if (!['status', 'run-fixture', 'run-grid', 'recover'].includes(operation)
+  || options.args.length > 3 || operation === 'run-grid' && (!gridOutput || liveOutput)
+  || ['status', 'recover'].includes(operation) && options.args.length > 1
+  || variant && !['light', 'dark', 'dark-large'].includes(variant)
+  || options.explicit && (operation !== 'run-fixture' || !variant))
+  throw new Error('Expected status, recover, run-grid <prepared-directory>, or run-fixture [light|dark|dark-large] [live-output-directory] [--policy <JSON-file>]');
+const preparedBatch = operation === 'run-grid' ? readBatch(gridOutput) : null;
+const policy = preparedBatch
+  ? capturePolicy(Object.hasOwn(preparedBatch, 'capturePolicy') ? preparedBatch.capturePolicy : LEGACY_CAPTURE_POLICY) : options.policy;
 const install = path.join(process.env.ProgramW6432 ?? process.env.ProgramFiles, 'SandboxMcpFullBroker');
 const current = JSON.parse(fs.readFileSync(path.join(install, 'current.json'), 'utf8'));
 if (current.schema !== 1 || !/^[A-F0-9]{64}$/.test(current.release)) throw new Error('Invalid installed release record');
 const executable = path.join(install, 'versions', current.release, 'broker', 'SandboxMcp.FullBroker.exe');
 const state = path.join(native(['client-path']).root, 'jobs');
 fs.mkdirSync(state, { recursive: true });
-const operation = process.argv[2] ?? 'status';
-const variant = operation === 'run-fixture' ? process.argv[3] : undefined;
-const liveOutput = process.argv[4] ? path.resolve(process.argv[4]) : null;
-const gridOutput = operation === 'run-grid' && process.argv[3] ? path.resolve(process.argv[3]) : null;
-if (!['status', 'run-fixture', 'run-grid', 'recover'].includes(operation)
-  || process.argv.length > 5 || operation === 'run-grid' && (!gridOutput || liveOutput)
-  || ['status', 'recover'].includes(operation) && process.argv.length > 3
-  || variant && !['light', 'dark', 'dark-large'].includes(variant))
-  throw new Error('Expected status, recover, run-grid <batch-directory>, or run-fixture [light|dark|dark-large] [live-output-directory]');
 
 function native(args, input) {
   const result = spawnSync(executable, args, { input, encoding: 'utf8', timeout: 225000, maxBuffer: 1024 * 1024 });
@@ -76,6 +82,7 @@ async function recover() {
     } catch (error) { blocked.add(pending.id); errors.push(error); }
   }
   const recovered = await recoverIndependent([...records.values()].filter(record => !blocked.has(record.id)), async record => {
+    requireDeprovisionReceipt(record);
     if (!record.containerId || !record.metadata)
       throw new Error(`Provisioning outcome is uncertain for ${record.id}; preserve this record and reconcile MXC accounts before retrying`);
     const detail = details.get(record.id);
@@ -92,7 +99,14 @@ async function recover() {
         save(record);
       }
       const account = native(['account-state', record.metadata.agentUserName, record.metadata.agentUserSid]);
-      if (account.exists) await deprovisionContainer(record.containerId);
+      if (account.exists) {
+        if (record.deprovisionResult) throw new Error('Account still exists after confirmed deprovision; preserve the receipt instead of replaying removal');
+        record.deprovisionAttemptedAt = new Date().toISOString();
+        save(record);
+        record.deprovisionResult = await deprovisionContainer(record.containerId);
+        save(record);
+        requireDeprovisionReceipt(record);
+      }
       record.phase = 'account-removed';
       save(record);
     }
@@ -100,7 +114,8 @@ async function recover() {
     record.phase = 'cleaned';
     atomicJson(path.join(evidence, 'client-record.json'), record);
     fs.unlinkSync(path.join(state, `${record.id}.json`));
-    return { id: record.id, evidence, accountRemoved: true };
+    return { id: record.id, evidence, accountRemoved: true,
+      sdkDeprovision: record.deprovisionResult ?? null, companionProfilesVerified: false };
   });
   errors.push(...recovered.errors);
   if (errors.length) throw new AggregateError(errors, `Recovery incomplete for some records; ${recovered.outcomes.length} independently verified accounts cleaned`);
@@ -138,14 +153,17 @@ async function runGrid(root, status) {
   let response, failure;
   try {
     for (const variant of variants) {
-      const record = { id: randomUUID().replaceAll('-', ''), variant, phase: 'provisioning', at: new Date().toISOString() };
+      const record = { id: randomUUID().replaceAll('-', ''), variant, phase: 'provisioning', at: new Date().toISOString(), capturePolicy: policy };
       save(record);
       records.push(record);
       const provision = await provisionContainer(ISO_REQUEST);
       record.containerId = provision.containerId; record.metadata = provision.metadata; record.phase = 'provisioned';
       try { save(record); }
       catch (error) {
-        try { await deprovisionContainer(provision.containerId); fs.unlinkSync(path.join(state, `${record.id}.json`)); }
+        try {
+          requireDeprovisionReceipt({ deprovisionResult: await deprovisionContainer(provision.containerId) });
+          fs.unlinkSync(path.join(state, `${record.id}.json`));
+        }
         catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Account receipt failed and compensating cleanup is incomplete'); }
         throw error;
       }
@@ -183,8 +201,8 @@ async function runGrid(root, status) {
     const visual = verifyVisualEvidence(directory, result.report.sessionId, record.metadata.agentUserName);
     const raw = JSON.parse(fs.readFileSync(path.join(directory, 'stream.json'), 'utf8'));
     const fixture = JSON.parse(fs.readFileSync(path.join(directory, 'fixture-settings.json'), 'utf8'));
-    const stream = verifyStreamEvidence(directory, raw, fixture, record.variant, result.report.sessionId);
-    if (!stream.cadenceMet) failure ??= new Error('At least one live stream missed the cadence threshold');
+    const stream = verifyStreamEvidence(directory, raw, fixture, record.variant, result.report.sessionId, policy);
+    if (!stream.cadenceMet) failure ??= new Error(stream.cadenceIssues.join('; '));
     runs.push({ variant: record.variant, response: result, visual, stream, cleanup: cleanup.find(item => item.id === record.id),
       observedFrames: progress.find(item => item.id === record.id)?.observedFrames,
       firstFrameAt: raw.frames[0].at, lastFrameAt: raw.frames.at(-1).at });
@@ -194,10 +212,10 @@ async function runGrid(root, status) {
     failure = new Error('Live collector did not preserve all 30 frames for every member');
   const overlapMs = runs.length === 3 ? Math.min(...runs.map(run => Date.parse(run.lastFrameAt)))
     - Math.max(...runs.map(run => Date.parse(run.firstFrameAt))) : 0;
-  if (!failure && (new Set(sessionIds).size !== 3 || overlapMs < 20000
+  if (!failure && (new Set(sessionIds).size !== 3 || overlapMs < policy.minOverlapMs
     || runs.some(run => !run.response.report.allSessionsPresentAtWorkerLaunch || !run.cleanup?.accountRemoved)))
     failure = new Error('Three-session overlap or cleanup proof failed');
-  console.log(JSON.stringify({ ok: !failure, runs, overlapMs, cleanup, ...(failure ? { error: failure.message } : {}) }, null, 2));
+  console.log(JSON.stringify({ ok: !failure, capturePolicy: policy, runs, overlapMs, cleanup, ...(failure ? { error: failure.message } : {}) }, null, 2));
   if (failure) throw failure;
 }
 
@@ -211,7 +229,7 @@ try {
     if (operation === 'run-grid') { await runGrid(gridOutput, status); return; }
     if (variant && !status.variants?.includes(variant)) throw new Error('Installed broker does not support this variant; update it before provisioning');
     if (liveOutput) requireFreshLiveOutput(liveOutput);
-    const record = { id: randomUUID().replaceAll('-', ''), phase: 'provisioning', at: new Date().toISOString() };
+    const record = { id: randomUUID().replaceAll('-', ''), phase: 'provisioning', at: new Date().toISOString(), capturePolicy: policy };
     save(record);
     let response, failure, collector, live;
     try {
@@ -222,7 +240,7 @@ try {
       try { save(record); }
       catch (error) {
         try {
-          await deprovisionContainer(provision.containerId);
+          requireDeprovisionReceipt({ deprovisionResult: await deprovisionContainer(provision.containerId) });
           fs.unlinkSync(path.join(state, `${record.id}.json`));
         } catch (cleanupError) {
           throw new AggregateError([error, cleanupError], 'Could not persist the account identity or complete compensating cleanup');
@@ -257,11 +275,11 @@ try {
     if (!failure && variant) {
       const evidence = path.join(here, 'evidence', `broker-${record.id}`, 'visual');
       stream = verifyStreamEvidence(evidence, JSON.parse(fs.readFileSync(path.join(evidence, 'stream.json'), 'utf8')),
-        JSON.parse(fs.readFileSync(path.join(evidence, 'fixture-settings.json'), 'utf8')), variant, response.report.sessionId);
-      if (!stream.cadenceMet) failure = new Error('Measured stream did not meet the 1fps tolerance');
+        JSON.parse(fs.readFileSync(path.join(evidence, 'fixture-settings.json'), 'utf8')), variant, response.report.sessionId, policy);
+      if (!stream.cadenceMet) failure = new Error(stream.cadenceIssues.join('; '));
       if (liveOutput && live?.observedFrames !== 30) failure ??= new Error('Live collector did not preserve all 30 frames');
     }
-    console.log(JSON.stringify({ response, cleanup, visual, stream, live }, null, 2));
+    console.log(JSON.stringify({ response, cleanup, visual, stream, live, capturePolicy: policy }, null, 2));
     if (failure) throw failure;
   });
 } catch (error) {

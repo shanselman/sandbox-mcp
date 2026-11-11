@@ -66,6 +66,17 @@ internal static class SelfTest
             if (!result.Ready || result.Code != "experimental_available"
                 || !result.Message.Contains("not proof")) throw new Exception("Availability misrepresented as native validation");
         });
+        Check("capture scheduling skips overdue slots rather than bursting after a stall", () =>
+        {
+            long due = CaptureSchedule.NextDue(0, 25, 1000);
+            if (due != 1000) throw new Exception("Normal target cadence changed");
+            due = CaptureSchedule.NextDue(due, 4200, 1000);
+            if (due != 5000) throw new Exception("Overdue slots were replayed");
+            if (CaptureSchedule.NextDue(due, 5020, 1000) != 6000)
+                throw new Exception("Cadence did not recover without a burst");
+            if (CaptureSchedule.NextDue(1000, 2000, 1000) != 2000)
+                throw new Exception("An available target slot was unnecessarily skipped");
+        });
         var members = new[] { "light", "dark", "dark-large" }.Select((variant, index) =>
             new GridMember(index.ToString("x32"), $"A{index}-B{index}", $"S-1-5-21-1-2-3-{1001 + index}", $"opaque-{index}", variant)).ToArray();
         Check("exactly three coordinated variants accepted", () =>

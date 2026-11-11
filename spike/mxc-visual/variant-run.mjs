@@ -5,22 +5,27 @@ import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { atomicJson } from './broker-client-state.mjs';
 import { readBatch } from './live-evidence.mjs';
+import { capturePolicy, policyArguments, describePolicy, LEGACY_CAPTURE_POLICY } from './capture-policy.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const prepare = process.argv[2] === '--prepare';
-const root = path.resolve(prepare ? process.argv[3] : process.argv[2] ?? '');
-if ((!prepare && process.argv.length !== 3) || (prepare && process.argv.length !== 4)) throw new Error('Expected [--prepare] <new-batch-directory>');
+const options = policyArguments(process.argv.slice(2));
+const prepare = options.args[0] === '--prepare';
+const root = path.resolve(prepare ? options.args[1] ?? '' : options.args[0] ?? '');
+if ((!prepare && (options.args.length !== 1 || options.explicit)) || (prepare && options.args.length !== 2))
+  throw new Error('Expected --prepare <new-batch-directory> [--policy <JSON-file>], or <prepared-directory> (uses its saved policy)');
 const batchFile = path.join(root, 'batch.json');
 if (prepare) {
   if (fs.existsSync(root)) throw new Error('Use a new batch directory');
   fs.mkdirSync(root, { recursive: true });
   atomicJson(batchFile, { schema: 1, startedAt: new Date().toISOString(), mode: 'concurrent', targetFps: 1,
-    runs: ['light', 'dark', 'dark-large'].map(variant => ({ variant, state: 'pending' })) });
+    capturePolicy: options.policy, runs: ['light', 'dark', 'dark-large'].map(variant => ({ variant, state: 'pending' })) });
   console.log(JSON.stringify({ root, prepared: true }));
 } else {
   const batch = readBatch(root);
   if (batch.schema !== 1 || batch.mode !== 'concurrent' || batch.runs.some(run => run.state !== 'pending'))
     throw new Error('Batch is not fresh; do not silently repeat completed/provisioned work');
+  const policy = capturePolicy(Object.hasOwn(batch, 'capturePolicy') ? batch.capturePolicy : LEGACY_CAPTURE_POLICY);
+  batch.capturePolicy = policy;
   let failed = false;
   for (const run of batch.runs) {
     run.state = 'starting';
@@ -38,23 +43,29 @@ if (prepare) {
     let result;
     try { result = JSON.parse(stdout); } catch { throw new Error(stderr || 'Client did not return JSON evidence'); }
     atomicJson(path.join(root, 'grid-result.json'), result);
-    if (code !== 0 || result.ok !== true || result.runs?.length !== 3 || result.overlapMs < 20000)
-      throw new Error(result.error ?? stderr ?? 'Grid assertions failed');
+    if (JSON.stringify(result.capturePolicy) !== JSON.stringify(policy))
+      throw new Error('Client timing policy differs from the prepared batch policy');
     batch.overlapMs = result.overlapMs;
     for (const run of batch.runs) {
-      const observed = result.runs.find(item => item.variant === run.variant);
-      if (!observed?.visual?.automationAndCaptureAssertionsPassed || !observed.stream?.cadenceMet || !observed.cleanup?.accountRemoved)
-        throw new Error('Visual/cadence/cleanup assertions failed');
+      const observed = result.runs?.find(item => item.variant === run.variant);
+      if (!observed) continue;
       Object.assign(run, {
-        state: 'passed', sessionId: observed.response.report.sessionId, requestId: observed.response.report.id,
+        sessionId: observed.response.report.sessionId, requestId: observed.response.report.id,
         createMs: observed.response.report.createMs, evidence: observed.cleanup.evidence, stream: observed.stream,
-        observedFrames: observed.observedFrames, cleanupConfirmed: true, firstFrameAt: observed.firstFrameAt,
+        warnings: observed.stream?.timingWarnings ?? [], observedFrames: observed.observedFrames,
+        cleanupConfirmed: observed.cleanup.accountRemoved === true, firstFrameAt: observed.firstFrameAt,
         lastFrameAt: observed.lastFrameAt, completedAt: new Date().toISOString(),
       });
       const source = path.join(observed.cleanup.evidence, 'visual');
       for (const name of ['1-before-printwindow-2.png', '2-after-printwindow-2.png', 'fixture-settings.json', 'stream.json', 'authorization.json'])
         fs.copyFileSync(path.join(source, name), path.join(root, run.variant, name), fs.constants.COPYFILE_EXCL);
     }
+    if (code !== 0 || result.ok !== true || result.runs?.length !== 3 || result.overlapMs < policy.minOverlapMs)
+      throw new Error(result.error || stderr || 'Grid assertions failed');
+    if (result.runs.some(run => !run.visual?.automationAndCaptureAssertionsPassed || !run.stream?.cadenceMet
+      || run.stream?.validImages !== 30 || run.observedFrames !== 30 || !run.cleanup?.accountRemoved))
+      throw new Error('Visual/cadence/collection/cleanup assertions failed');
+    for (const run of batch.runs) run.state = 'passed';
   } catch (error) {
     failed = true;
     for (const run of batch.runs) if (run.state !== 'passed') { run.state = 'failed'; run.error = error.message; }
@@ -71,7 +82,8 @@ if (prepare) {
     '|---|---:|---|---:|---:|---:|---:|---:|---|',
     ...batch.runs.map(run => `| ${run.variant} | ${run.sessionId ?? '-'} | ${run.stream?.theme ?? '-'} | ${run.stream?.actualWindowDpi ?? '-'} | ${run.stream?.fixtureLayoutScale ?? '-'} | ${run.stream?.frames ?? 0} | ${run.stream?.measuredFps.toFixed(3) ?? '-'} | ${run.stream?.maximumIntervalMs ?? '-'} | ${run.cleanupConfirmed ? 'confirmed' : 'not confirmed'} |`),
     '', 'The large variant uses a **1.5x fixture render transform**, not a changed monitor DPI. Actual DPI/rasterization values are measured.',
-    'The target is 1fps; the keep bar is average >=0.9fps, no gap >2000ms, and all 30 frames captured per run.',
+    `The target is 1fps; selected timing policy: ${describePolicy(policy)} All 30 frames must be captured, validated and collected.`,
+    ...batch.runs.flatMap(run => (run.warnings ?? []).map(warning => `Timing warning (${run.variant}): ${warning}`)),
     'Capture/automation checks are not a substitute for inspecting the before/after pixels.',
     '',
     ...batch.runs.flatMap(run => run.state === 'passed' ? [

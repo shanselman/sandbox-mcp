@@ -173,3 +173,17 @@ test('malformed clocks, identities, dimensions and misleading scale claims fail 
   const unordered = stream(); [unordered.frames[0], unordered.frames[1]] = [unordered.frames[1], unordered.frames[0]];
   assert.throws(() => summarizeStream(unordered, fixture, 'dark-large'), /distinct/);
 });
+test('capture phase timings are optional for historical streams but validated when supplied', () => {
+  const data = stream();
+  assert.equal(summarizeStream(data, fixture, 'dark-large').phaseTimings, null);
+  data.schedule = 'skip-overdue-slots';
+  for (const frame of data.frames) {
+    frame.elapsedMs += 30;
+    Object.assign(frame, { captureMs: 30, renderMs: 15, publicationMs: 10, scheduleDelayMs: 4 });
+  }
+  const result = summarizeStream(data, fixture, 'dark-large');
+  assert.equal(result.captureSchedule, 'skip-overdue-slots');
+  assert.deepEqual(result.phaseTimings, { maximumRenderMs: 15, maximumPublicationMs: 10, maximumScheduleDelayMs: 4 });
+  data.frames[5].publicationMs = 20;
+  assert.throws(() => summarizeStream(data, fixture, 'dark-large'), /phase timing/);
+});

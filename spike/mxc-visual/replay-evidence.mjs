@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { summarizeStream, validatePng } from './live-evidence.mjs';
 import { atomicJson, verifyVisualEvidence } from './broker-client-state.mjs';
+import { LEGACY_CAPTURE_POLICY } from './capture-policy.mjs';
 
 function readJson(file) {
   const stat = fs.lstatSync(file);
@@ -26,7 +27,7 @@ export function prepareReplay(destination, sources) {
     const worker = readJson(path.join(visual, 'worker.json'));
     const fixture = readJson(path.join(visual, 'fixture-settings.json'));
     const stream = readJson(path.join(visual, 'stream.json'));
-    const metrics = summarizeStream(stream, fixture, fixture.variant);
+    const metrics = summarizeStream(stream, fixture, fixture.variant, LEGACY_CAPTURE_POLICY);
     verifyVisualEvidence(visual, worker.sessionId, worker.user);
     if (worker.error || worker.appCleanupError || worker.stream?.ExitCode !== 0
       || stream.frames.some(frame => frame.sessionId !== worker.sessionId || frame.pid !== worker.appPid))

@@ -11,5 +11,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\EvidencePublication.cs" Link="EvidencePublication.cs" />
+    <Compile Include="..\CaptureSchedule.cs" Link="CaptureSchedule.cs" />
   </ItemGroup>
 </Project>

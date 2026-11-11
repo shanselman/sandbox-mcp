@@ -13,6 +13,18 @@ rebooted, and approved a new pinned broker package. See
 for exact binary identities, installation, initial live evidence and remaining
 warnings. This does not retroactively change the failed crash-run verdict.
 
+**Current cleanup hold:** profile classification suppressed the observed shell
+startup crashes, but a broader read-only audit found retained companion
+profiles under a different SID family. The earlier account-SID-only cleanup
+checks missed these. Do not start further native batches until supported
+companion cleanup is established; do not remove profiles based only on names
+or inferred SID relationships. Offline capture-policy tests remain usable.
+Client recovery now persists SDK deprovision outcomes and retains receipts
+when removal is uncertain or returns warnings instead of acknowledging them
+as clean. A warning-free SDK response still does not verify companion cleanup.
+The [tiny SDK-only repro](../../docs/pure-mxc-profile-repro.md) demonstrates
+retention without the custom broker.
+
 Experimental code; see [the handoff](../../docs/visual-test-farm-spikes.md)
 for goals, results and the evidence contract. Not used by sandbox-mcp itself.
 
@@ -278,9 +290,51 @@ node broker-client.mjs status
 Inspect the final `report.json`, `report.md`, per-variant frames and cleanup.
 Keep the viewer URL private; stop only your viewer process when finished.
 The viewer can reopen a completed batch without rerunning native work; recorded
-tiles are not live sessions. The keep bar remains 30 frames/member, average
->=0.9fps, maximum gap <=2000ms and >=20 seconds common coverage. Larger viewer
+tiles are not live sessions. All 30 frames/member must be present, valid and
+collected. New batches default to average >=0.9fps and >=20 seconds common
+coverage, but have **no hard maximum-frame-gap cutoff**. Long gaps remain
+visible timing warnings, not silently discarded measurements. Larger viewer
 layouts/replay do not establish native capacity or make failed batches pass.
+
+### Capture timing policy
+
+Select tolerances **before** starting a run. A policy JSON file accepts:
+
+```json
+{
+  "schema": 1,
+  "minAverageFps": 0.9,
+  "maxFrameGapMs": null,
+  "minOverlapMs": 20000
+}
+```
+
+`minAverageFps` may be a number in `(0,1]` or `null` for report-only rate.
+`maxFrameGapMs` may be a positive integer or `null` for report/warn-only gaps.
+`minOverlapMs` is a nonnegative integer. Integrity, ownership, frame count
+and cleanup checks cannot be disabled by this policy.
+
+```powershell
+node variant-run.mjs --prepare evidence\grid-policy-1 --policy capture-policy.json
+# Later execution uses the policy saved in batch.json, not a new CLI override.
+node variant-run.mjs evidence\grid-policy-1
+
+node broker-client.mjs run-fixture light evidence\single-policy-1 --policy capture-policy.json
+```
+
+For the former strict behavior, explicitly select `"maxFrameGapMs": 2000`.
+The selected policy and any timing warnings appear in the report. Older
+prepared batches without a policy and historical crash replay retain the
+legacy strict interpretation. Existing failed reports are never rewritten as
+passing merely because a newer default is more flexible.
+
+The source capture helper now skips overdue schedule slots rather than
+capturing a burst to catch up after a stall. It separately records rendering,
+PNG publication (encoding/flush/rename), and schedule-delay timings. The old
+`captureMs` combined those phases, so previous long captures cannot be
+attributed specifically to `PrintWindow` rather than file publication.
+This helper change requires a new approved installed package; offline clock
+tests are not evidence that the actual stall has been removed.
 
 Do not run `test\broker-client-lock.test.mjs` or a broad spike test glob while
 live workflows are active: that test deliberately acquires the real owner lock.

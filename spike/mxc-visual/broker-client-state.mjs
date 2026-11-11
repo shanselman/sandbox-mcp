@@ -60,6 +60,15 @@ export async function recoverIndependent(records, cleanup) {
   return { outcomes, errors };
 }
 
+export function requireDeprovisionReceipt(record) {
+  if (!record.deprovisionAttemptedAt && !record.deprovisionResult) return;
+  const warnings = record.deprovisionResult?.warnings;
+  if (!Array.isArray(warnings) || warnings.some(warning => typeof warning !== 'string'))
+    throw new Error('SDK deprovision outcome is unconfirmed; preserve the receipt and reconcile instead of replaying the container ID');
+  if (warnings.length)
+    throw new Error(`SDK deprovision reported warnings; preserve the receipt for inspection: ${warnings.join('; ')}`);
+}
+
 const evidenceFiles = [
   'worker.json', 'worker-started.json', 'job.json', 'authorization.json', 'fixture-settings.json', 'stream.json', 'live.json',
   ...Array.from({ length: 30 }, (_, i) => `frame-${String(i).padStart(3, '0')}.png`),

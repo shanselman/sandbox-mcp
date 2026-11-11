@@ -150,6 +150,11 @@ test('replay, source failure, stale and recorded indicators survive compact pres
   assert.equal(tiles()[0].children[0].children[1].textContent, 'RECORDED · finished');
   assert.match(elements.get('details').textContent, /Tiles retain recorded evidence/);
   assert.equal(elements.get('error').textContent, '');
+  completed.runs[0].stream = { measuredFps: 0.95, maximumIntervalMs: 4000,
+    timingWarnings: ['Capture gap 4000ms; selected policy reports only'] };
+  context.renderBatch(completed);
+  assert.equal(tiles()[0].children[3].hidden, false);
+  assert.match(tiles()[0].children[3].textContent, /4000ms/);
 });
 
 test('a withdrawn or excluded frame is not left visible as current evidence', () => {

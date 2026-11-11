@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { atomicJson } from './broker-client-state.mjs';
 import { validatePng } from './png-evidence.mjs';
+import { capturePolicy } from './capture-policy.mjs';
 export { validatePng } from './png-evidence.mjs';
 
 export function validateFrame(frame) {
@@ -17,6 +18,11 @@ export function validateFrame(frame) {
     || !Number.isFinite(frame.captureMs) || frame.captureMs < 0 || frame.captureMs > frame.elapsedMs)
     throw new Error('Invalid frame geometry/timing');
   if (frame.file !== `frame-${String(frame.sequence).padStart(3, '0')}.png`) throw new Error('Invalid frame file');
+  const phases = ['renderMs', 'publicationMs', 'scheduleDelayMs'];
+  if (phases.some(key => Object.hasOwn(frame, key))
+    && (phases.some(key => !Number.isFinite(frame[key]) || frame[key] < 0)
+      || frame.renderMs + frame.publicationMs > frame.captureMs))
+    throw new Error('Invalid capture phase timing');
 }
 
 export function readFrame(workspace, destination, observed, now = Date.now()) {
@@ -146,7 +152,8 @@ export function startLiveCollector(workspace, destination, initial) {
   };
 }
 
-export function summarizeStream(stream, fixture, expectedVariant) {
+export function summarizeStream(stream, fixture, expectedVariant, policyInput) {
+  const policy = capturePolicy(policyInput);
   if (!stream || !Array.isArray(stream.frames) || stream.targetFps !== 1) throw new Error('Missing stream report');
   const frames = stream.frames;
   frames.forEach(validateFrame);
@@ -169,10 +176,28 @@ export function summarizeStream(stream, fixture, expectedVariant) {
   const sorted = [...intervals].sort((a, b) => a - b);
   const span = good.at(-1).elapsedMs - good[0].elapsedMs;
   const fps = 29 * 1000 / span;
+  const maximumIntervalMs = Math.max(...intervals);
+  const cadenceIssues = [];
+  if (policy.minAverageFps !== null && fps < policy.minAverageFps)
+    cadenceIssues.push(`Average ${fps.toFixed(3)} fps is below the selected ${policy.minAverageFps} fps minimum`);
+  if (policy.maxFrameGapMs !== null && maximumIntervalMs > policy.maxFrameGapMs)
+    cadenceIssues.push(`Maximum gap ${maximumIntervalMs}ms exceeds the selected ${policy.maxFrameGapMs}ms limit`);
+  const lateIntervals = intervals.filter(interval => interval > 2 * 1000 / stream.targetFps);
+  const timingWarnings = lateIntervals.length ? [
+    `${lateIntervals.length} gap(s) exceeded twice the target frame interval; worst ${maximumIntervalMs}ms. ${
+      policy.maxFrameGapMs === null ? 'No hard maximum-gap limit selected.' : `Selected maximum-gap limit: ${policy.maxFrameGapMs}ms.`}`,
+  ] : [];
+  const measuredPhases = good.filter(frame => Number.isFinite(frame.renderMs));
+  const phaseTimings = measuredPhases.length === good.length ? {
+    maximumRenderMs: Math.max(...good.map(frame => frame.renderMs)),
+    maximumPublicationMs: Math.max(...good.map(frame => frame.publicationMs)),
+    maximumScheduleDelayMs: Math.max(...good.map(frame => frame.scheduleDelayMs)),
+  } : null;
   return {
     frames: good.length, failedFrames: frames.length - good.length, targetFps: 1, measuredFps: fps,
     intervalMedianMs: sorted[Math.floor(sorted.length / 2)], intervalP95Ms: sorted[Math.ceil(sorted.length * .95) - 1],
-    maximumIntervalMs: Math.max(...intervals), cadenceMet: fps >= .9 && Math.max(...intervals) <= 2000,
+    maximumIntervalMs, cadenceMet: cadenceIssues.length === 0, cadenceIssues, timingWarnings, capturePolicy: policy,
+    captureSchedule: stream.schedule ?? 'legacy-fixed-deadlines', phaseTimings,
     actualWindowDpi: fixture.actualWindowDpi, rasterizationScale: fixture.rasterizationScale,
     theme: fixture.theme, fixtureLayoutScale: fixture.fixtureLayoutScale, scaleIsSimulation: fixture.scaleIsSimulation,
     captureSizes: [...new Set(good.map(frame => `${frame.width}x${frame.height}`))],

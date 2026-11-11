@@ -168,10 +168,12 @@ static class Program
         if (hwnd == IntPtr.Zero) throw new InvalidOperationException("No visible target window");
         var frames = new List<object>();
         var timer = Stopwatch.StartNew();
+        long scheduledMs = 0;
+        const int intervalMs = 1000;
         int failures = 0;
         for (int sequence = 0; sequence < 30; sequence++)
         {
-            int delay = checked((int)(sequence * 1000 - timer.ElapsedMilliseconds));
+            int delay = checked((int)(scheduledMs - timer.ElapsedMilliseconds));
             if (delay > 0) Thread.Sleep(delay);
             if (target.HasExited) throw new InvalidOperationException("Target exited during the bounded stream");
             long start = timer.ElapsedMilliseconds;
@@ -183,16 +185,21 @@ static class Program
                 if (width <= 0 || height <= 0 || (long)width * height > 16000000)
                     throw new InvalidOperationException("Invalid capture dimensions");
                 using var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+                long renderStarted = timer.ElapsedMilliseconds;
                 using (var graphics = Graphics.FromImage(bitmap))
                 {
                     var dc = graphics.GetHdc();
                     try { if (!PrintWindow(hwnd, dc, 2)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "PrintWindow"); }
                     finally { graphics.ReleaseHdc(dc); }
                 }
+                long renderMs = timer.ElapsedMilliseconds - renderStarted;
                 string path = Path.Combine(output, name);
+                long publicationStarted = timer.ElapsedMilliseconds;
                 EvidencePublication.PublishNew(path, stream => bitmap.Save(stream, ImageFormat.Png));
-                var frame = new { sequence, at = DateTimeOffset.UtcNow, elapsedMs = timer.ElapsedMilliseconds,
-                    captureMs = timer.ElapsedMilliseconds - start, scheduledMs = sequence * 1000, file = name,
+                long completed = timer.ElapsedMilliseconds;
+                var frame = new { sequence, at = DateTimeOffset.UtcNow, elapsedMs = completed,
+                    captureMs = completed - start, renderMs, publicationMs = completed - publicationStarted,
+                    scheduleDelayMs = Math.Max(0, start - scheduledMs), scheduledMs, file = name,
                     sessionId = target.SessionId, pid, width, height, actualWindowDpi = GetDpiForWindow(hwnd), error = (string?)null };
                 frames.Add(frame);
                 WriteLive(output, sequence, frame);
@@ -205,9 +212,11 @@ static class Program
                 frames.Add(frame);
                 WriteLive(output, sequence, frame);
             }
+            scheduledMs = CaptureSchedule.NextDue(scheduledMs, timer.ElapsedMilliseconds, intervalMs);
         }
         report["frames"] = frames;
         report["targetFps"] = 1;
+        report["schedule"] = "skip-overdue-slots";
         report["failedFrames"] = failures;
         EvidencePublication.PublishNew(Path.Combine(output, "stream.json"),
             stream => JsonSerializer.Serialize(stream, report, new JsonSerializerOptions { WriteIndented = true }));

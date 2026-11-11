@@ -58,6 +58,21 @@ test('corrupt preserved image is explicitly excluded, hashed and never repaired 
   assert.equal(fs.existsSync(path.join(root, 'replay', 'light', 'frame-029.png')), false);
   assert(fs.readFileSync(corrupt).equals(Buffer.alloc(80)));
 });
+test('historical crash replay retains the legacy strict timing policy', t => {
+  const { root, inputs } = sources(t);
+  const file = path.join(inputs[0], 'visual', 'stream.json');
+  const stream = JSON.parse(fs.readFileSync(file, 'utf8'));
+  for (const frame of stream.frames.slice(8)) {
+    frame.elapsedMs += 3000;
+    frame.at = new Date(Date.parse(frame.at) + 3000).toISOString();
+  }
+  fs.writeFileSync(file, JSON.stringify(stream));
+  const report = prepareReplay(path.join(root, 'replay'), inputs);
+  assert.equal(report.runs[0].stream.capturePolicy.maxFrameGapMs, 2000);
+  assert.equal(report.runs[0].stream.cadenceMet, false);
+  assert.equal(report.captureCadenceKeepBarMet, false);
+  assert.equal(report.sourceOutcome, 'host-bugcheck');
+});
 test('PNG integrity rejects torn chunks, modified data and missing endings', () => {
   const bytes = pngFixture(8);
   validatePng(bytes, { width: 1, height: 1 });

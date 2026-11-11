@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { requireId, atomicJson, readRecord, mergePending, copyEvidence, verifyVisualEvidence, recoverIndependent } from '../broker-client-state.mjs';
+import { requireId, atomicJson, readRecord, mergePending, copyEvidence, verifyVisualEvidence, recoverIndependent, requireDeprovisionReceipt } from '../broker-client-state.mjs';
 import { pngFixture } from './png-fixture.mjs';
 
 const id = '0123456789abcdef0123456789abcdef';
@@ -19,6 +19,13 @@ function temporary(t) {
 test('request IDs reject traversal and ambiguous forms', () => {
   assert.equal(requireId(id), id);
   for (const bad of ['..', '../x', id.toUpperCase(), ` ${id}`, '', null]) assert.throws(() => requireId(bad));
+});
+test('uncertain or warning-bearing SDK removal receipts cannot be acknowledged as clean', () => {
+  assert.throws(() => requireDeprovisionReceipt({ deprovisionAttemptedAt: '2026-11-11T00:00:00Z' }), /unconfirmed.*instead of replaying/);
+  assert.throws(() => requireDeprovisionReceipt({ deprovisionResult: { warnings: 'not-an-array' } }), /unconfirmed/);
+  assert.throws(() => requireDeprovisionReceipt({ deprovisionResult: { warnings: ['Profile still in use'] } }), /Profile still in use/);
+  assert.doesNotThrow(() => requireDeprovisionReceipt({ deprovisionAttemptedAt: '2026-11-11T00:00:00Z', deprovisionResult: { warnings: [] } }));
+  assert.doesNotThrow(() => requireDeprovisionReceipt({ phase: 'provisioned' }));
 });
 test('atomic records preserve the opaque container identity and replace consistently', t => {
   const file = path.join(temporary(t), `${id}.json`);
