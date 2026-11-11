@@ -26,13 +26,27 @@ export function readFrame(workspace, destination, observed, now = Date.now()) {
   const source = path.join(workspace, directories[0]);
   if (fs.lstatSync(source).isSymbolicLink()) throw new Error('Live output is a reparse point');
   const metadataFiles = fs.readdirSync(source).filter(name => /^frame-meta-\d{3}\.json$/.test(name)).sort();
-  const status = path.join(source, metadataFiles.at(-1) ?? 'live.json');
-  if (!fs.existsSync(status)) return null;
+  if (metadataFiles.length > 30) throw new Error('Too many immutable frame records');
+  if (!metadataFiles.length && !fs.existsSync(path.join(source, 'live.json'))) return null;
+  // A poll can miss several publication times. Drain the immutable backlog,
+  // but retain original capture times so collected-late frames are not "live".
+  const pending = metadataFiles.length ? metadataFiles.filter(name =>
+    !observed.sequences.has(Number(name.slice(11, 14))) || name === metadataFiles.at(-1)) : ['live.json'];
+  let latest;
+  for (const name of pending) {
+    latest = readPublishedFrame(source, name, destination, observed, now);
+    if (latest.error) throw new Error(`Frame ${latest.sequence}: ${latest.error}`);
+  }
+  return latest;
+}
+
+function readPublishedFrame(source, name, destination, observed, now) {
+  const status = path.join(source, name);
   if (fs.lstatSync(status).isSymbolicLink() || fs.statSync(status).size > 16384) throw new Error('Invalid live metadata');
   const frame = JSON.parse(fs.readFileSync(status, 'utf8'));
   validateFrame(frame);
   if (Date.parse(frame.at) > now + 5000) throw new Error('Frame clock is in the future');
-  if (metadataFiles.length && path.basename(status) !== `frame-meta-${String(frame.sequence).padStart(3, '0')}.json`)
+  if (name !== 'live.json' && name !== `frame-meta-${String(frame.sequence).padStart(3, '0')}.json`)
     throw new Error('Frame sequence does not match immutable metadata');
   if (observed.sessionId && (observed.sessionId !== frame.sessionId || observed.pid !== frame.pid))
     throw new Error('Live session/process identity changed');

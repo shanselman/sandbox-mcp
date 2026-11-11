@@ -125,6 +125,28 @@ This is a promising controlled comparison on the same host/boot, not a final
 long-run verdict. A fresh 31-grid qualification was then started with an
 additional stop-on-agent-startup-error check.
 
+That first attempt stopped at grid 12 on a separate evidence-collector defect:
+the dark worker preserved 30 valid images, but the polling collector copied
+only 29, skipping sequence 15. The first 11 grids passed the full audit; the
+12th grid is retained as a qualification failure even though the earlier
+client report called the worker/cleanup result passed.
+
+Across all 39 completed lifecycles in that stopped attempt, an independent
+event/account/profile audit found zero agent-attributed Application Error
+events and no remaining owned accounts or profiles. The host boot was
+unchanged. This still supports the profile-classification fix for these shell
+failures, without disguising the separate collector failure as success.
+
+The collector previously read only the newest immutable metadata file at each
+poll. It now drains unseen published frames in order, preserving their
+original capture timestamps and recording when they were actually received.
+Intermediate corrupt/wrong-session/error frames cannot be silently skipped.
+Both client verdict paths reject incomplete collection when a live collector
+is requested. Deterministic regressions failed before this change and pass
+after it. No timing threshold was relaxed and no historical evidence was
+repaired. A new qualification directory was used to restart the full run
+with the corrected ordinary-user client; no broker/UAC update was needed.
+
 `Kind=Full` and `InitialProgram=null` remained unchanged; the deferred
 InitialProgram suggestion below was not used. No AppX re-registration or
 host-wide shell/display setting was changed.

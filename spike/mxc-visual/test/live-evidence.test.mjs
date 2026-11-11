@@ -91,6 +91,49 @@ test('immutable frame publication survives a reader holding earlier metadata ope
     assert.equal(observed.sequences.size, 5);
   } finally { for (const reader of readers) fs.closeSync(reader); }
 });
+test('a delayed collector drains every published frame without rewriting capture timestamps', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'full-live-backlog-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const workspace = path.join(root, 'shared'), source = path.join(workspace, `broker-${key}`), destination = path.join(root, 'copy');
+  fs.mkdirSync(source, { recursive: true });
+  const observed = { sequences: new Map() };
+  const publish = sequence => {
+    const frame = frameData(sequence);
+    fs.writeFileSync(path.join(source, frame.file), png(sequence));
+    fs.writeFileSync(path.join(source, `frame-meta-${String(sequence).padStart(3, '0')}.json`), JSON.stringify(frame));
+  };
+  publish(0);
+  const firstReceived = Date.parse(frameData(0).at) + 100;
+  readFrame(workspace, destination, observed, firstReceived);
+  for (let sequence = 1; sequence < 30; sequence++) publish(sequence);
+  const delayedNow = Date.parse(frameData(29).at) + 8000;
+  const latest = readFrame(workspace, destination, observed, delayedNow);
+  assert.equal(observed.sequences.size, 30, 'polling gaps must not discard immutable frames');
+  assert.equal(fs.readdirSync(destination).filter(name => name.endsWith('.png')).length, 30);
+  assert.equal(latest.sequence, 29);
+  assert.equal(latest.at, frameData(29).at, 'a late collection must not make an old capture look fresh');
+  assert.equal(observed.sequences.get(0).receivedAt, new Date(firstReceived).toISOString());
+  assert.equal(observed.sequences.get(15).receivedAt, new Date(delayedNow).toISOString());
+});
+test('backlog collection cannot skip corrupt or wrong-session intermediate evidence', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'full-live-backlog-invalid-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const workspace = path.join(root, 'shared'), source = path.join(workspace, `broker-${key}`);
+  fs.mkdirSync(source, { recursive: true });
+  for (let sequence = 0; sequence < 3; sequence++) {
+    fs.writeFileSync(path.join(source, frameData(sequence).file), png(sequence));
+    fs.writeFileSync(path.join(source, `frame-meta-00${sequence}.json`), JSON.stringify(frameData(sequence)));
+  }
+  const middle = path.join(source, 'frame-001.png');
+  fs.writeFileSync(middle, Buffer.alloc(100));
+  assert.throws(() => readFrame(workspace, path.join(root, 'corrupt'), { sequences: new Map() }), /PNG/);
+  fs.writeFileSync(middle, png(1));
+  const metadata = path.join(source, 'frame-meta-001.json');
+  fs.writeFileSync(metadata, JSON.stringify({ ...frameData(1), sessionId: 99 }));
+  assert.throws(() => readFrame(workspace, path.join(root, 'identity'), { sequences: new Map() }), /identity changed/);
+  fs.writeFileSync(metadata, JSON.stringify({ ...frameData(1), error: 'Capture failed before the latest frame' }));
+  assert.throws(() => readFrame(workspace, path.join(root, 'capture-error'), { sequences: new Map() }), /Capture failed/);
+});
 test('viewer reads immutable progress and final batch state without replacing open files', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'full-progress-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

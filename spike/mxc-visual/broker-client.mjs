@@ -190,6 +190,8 @@ async function runGrid(root, status) {
       firstFrameAt: raw.frames[0].at, lastFrameAt: raw.frames.at(-1).at });
   }
   const sessionIds = runs.map(run => run.response.report.sessionId);
+  if (!failure && runs.some(run => run.observedFrames !== 30))
+    failure = new Error('Live collector did not preserve all 30 frames for every member');
   const overlapMs = runs.length === 3 ? Math.min(...runs.map(run => Date.parse(run.lastFrameAt)))
     - Math.max(...runs.map(run => Date.parse(run.firstFrameAt))) : 0;
   if (!failure && (new Set(sessionIds).size !== 3 || overlapMs < 20000
@@ -257,6 +259,7 @@ try {
       stream = verifyStreamEvidence(evidence, JSON.parse(fs.readFileSync(path.join(evidence, 'stream.json'), 'utf8')),
         JSON.parse(fs.readFileSync(path.join(evidence, 'fixture-settings.json'), 'utf8')), variant, response.report.sessionId);
       if (!stream.cadenceMet) failure = new Error('Measured stream did not meet the 1fps tolerance');
+      if (liveOutput && live?.observedFrames !== 30) failure ??= new Error('Live collector did not preserve all 30 frames');
     }
     console.log(JSON.stringify({ response, cleanup, visual, stream, live }, null, 2));
     if (failure) throw failure;
