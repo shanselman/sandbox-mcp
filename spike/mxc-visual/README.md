@@ -671,13 +671,57 @@ remained loaded after teardown; the companion total rose from 226 to 234.
 Minimum sampled free memory was 23.957 GiB and maximum host committed memory
 50.457 GiB. No host reboot occurred.
 
-The paced comparison was prepared but **not run** because the recorded
-post-control cleanup gate found the loaded profile pair. The operator was
-unavailable for the decision to continue on that documented state. No profiles,
-handles or services were forcibly changed. The fifteen-second pacing mode has
-offline protocol/cancellation coverage, but **no native benefit is claimed**.
-The installed binaries are identical to the baseline candidate; only the
-host-side dump-copy bound was corrected afterward.
+The paced comparison was initially held because the recorded post-control
+cleanup gate found the loaded profile pair and the operator was unavailable.
+After the user explicitly directed autonomous completion, the starting state
+was re-audited: no test-session processes, no original account, no broker
+pending work, and only that exact prior profile pair remained loaded.
+The comparison carried that known inactive remnant as a documented baseline
+caveat; it did not forcibly unload anything or relax cleanup checks for the
+eight new identities. The originally prepared host snapshot was preserved
+separately from the refreshed comparison baseline.
+
+**Paced eight-session result: passed.** The same installed candidate and
+eight-workload matrix ran with `"startupPacing": "settle-15s"`. All seven
+between-creation waits were verified: actual durations were 15.587-15.760
+seconds, totaling 109.736 seconds including scheduling overhead. The normal
+application/helper/capture deadlines were unchanged.
+
+| Observation | Immediate baseline | Paced comparison |
+|---|---:|---:|
+| Stream outcome | Failed before capture | Passed |
+| Valid collected PNGs | 0 | 240 |
+| Verified arithmetic results | No complete streams | 24 |
+| Simultaneously live cameras observed | 0 | 8 |
+| Common frame coverage | None | 28,786 ms |
+| Slowest member / maximum frame gap | N/A | 1.006 fps / 1,077 ms |
+| Maximum sampled test processes | 548 | 544 |
+| Minimum sampled available physical RAM | 23.957 GiB | 26.669 GiB |
+| Maximum sampled host committed memory | 50.457 GiB | 50.415 GiB |
+| New relevant Application Error events | 1 NVIDIA user-process event | 0 |
+
+All paced sample startup traces reached the loaded callback. Preview helper
+durations were 1.223-2.404 seconds, and complete worker preparation took
+6.802-10.006 seconds per worker. Light/dark appearances and 100/125/150/175%
+simulated scales matched the actual 640x560, 800x700, 960x840 and 1120x980 PNGs;
+all measured window DPI values were 96. The eight recorded videos were
+observed decoding, advancing and looping without playback errors.
+
+The eight new native sessions, original accounts and original profiles were
+removed; no new companion was loaded, and the broker pending queue was empty.
+Eight additional unloaded companion records remained (234 -> 242). The old
+loaded profile pair was not touched. The host did not reboot between conditions.
+No twelve- or sixteen-session run followed this comparison.
+
+This is **one sequential diagnostic pair**, not a randomized/repeated
+reliability qualification. Fixed order, warmed caches, the known prior loaded
+profile pair and the baseline NVIDIA background-process crash are potential
+confounders. The similar process/commit footprint and the passing paced run
+support overlapping desktop startup as a cause of delayed app readiness, but
+do not establish the exact blocking subsystem or prove a universal fifteen-
+second fix. Pacing remains explicit/opt-in; the baseline behavior is unchanged.
+Raw dumps remain local. Findings and per-condition ledgers are preserved under
+`startup-comparison-20261112-061435`.
 
 The Windows Calculator workload activates
 `Microsoft.WindowsCalculator_8wekyb3d8bbwe!App` (the app launched by `calc.exe`)
