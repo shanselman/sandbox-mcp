@@ -30,7 +30,8 @@ function card(key) {
   const heading = document.createElement('div'); heading.className = 'tile-head';
   const title = document.createElement('h2');
   const badge = document.createElement('span'); badge.className = 'badge';
-  heading.append(title, badge);
+  const appearance = document.createElement('span'); appearance.className = 'variant-label'; appearance.hidden = true;
+  heading.append(title, badge, appearance);
   const picture = document.createElement('div'); picture.className = 'picture';
   const image = document.createElement('img'); image.hidden = true;
   const placeholder = document.createElement('div'); placeholder.className = 'placeholder'; placeholder.textContent = 'Waiting for this agent session';
@@ -46,7 +47,7 @@ function card(key) {
   const warning = document.createElement('p'); warning.className = 'tile-warning'; warning.hidden = true;
   const playbackNote = document.createElement('p'); playbackNote.className = 'playback-note'; playbackNote.hidden = true;
   root.append(heading, picture, evidence, warning, playbackNote); document.getElementById('grid').append(root);
-  const result = { root, title, badge, image, placeholder, video, metrics, evidenceSummary, warning, playbackNote,
+  const result = { root, title, badge, appearance, image, placeholder, video, metrics, evidenceSummary, warning, playbackNote,
     loops: 0, lastTime: 0, playbackError: '' };
   video.addEventListener('timeupdate', () => {
     if (video.currentTime + 0.1 < result.lastTime && !video.seeking) result.loops++;
@@ -119,6 +120,13 @@ function renderBatch(batch) {
     const tile = card(identity(run, index)), frame = run.progress?.frame, preview = run.progress?.preview, fixture = frame?.fixture ?? preview?.fixture;
     const name = sessionName(run, index);
     tile.title.textContent = name; tile.title.title = name;
+    const measured = fixture ?? run.stream;
+    const appearance = measured ?? run.requestedAppearance;
+    tile.appearance.textContent = appearance
+      ? `${appearance.theme} · ${Math.round(appearance.fixtureLayoutScale * 100)}%${appearance.scaleIsSimulation ? ' sim' : ''} · ${measured ? `${appearance.actualWindowDpi} DPI` : 'requested'}`
+      : '';
+    tile.appearance.title = tile.appearance.textContent;
+    tile.appearance.hidden = !appearance;
     tile.image.alt = `Captured application window in ${name} session`;
     if (grid.children[index] !== tile.root) grid.insertBefore(tile.root, grid.children[index] ?? null);
     tile.badge.className = `badge ${run.state}`;

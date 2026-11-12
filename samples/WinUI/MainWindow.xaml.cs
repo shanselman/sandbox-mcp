@@ -40,10 +40,12 @@ public sealed partial class MainWindow : Window
             Root.Children.Add(CalculatorView.Create(calculator, VariantInfo));
             AppWindow.Resize(new SizeInt32((int)(640 * scale), (int)(560 * scale)));
         }
-        double layoutScale = variant == "dark-large" ? 1.5 : 1;
+        double layoutScale = calculator > 0 ? 1 + ((calculator - 1) / 2 % 4) * 0.25
+            : variant == "dark-large" ? 1.5 : 1;
         if (layoutScale != 1)
         {
-            AppWindow.Resize(new SizeInt32((int)(520 * scale * layoutScale), (int)(400 * scale * layoutScale)));
+            int width = calculator > 0 ? 640 : 520, height = calculator > 0 ? 560 : 400;
+            AppWindow.Resize(new SizeInt32((int)(width * scale * layoutScale), (int)(height * scale * layoutScale)));
             if (!GetClientRect(WinRT.Interop.WindowNative.GetWindowHandle(this), out var client))
                 throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Read fixture client rectangle");
             Root.Width = (client.Right - client.Left) / scale / layoutScale;
@@ -56,7 +58,7 @@ public sealed partial class MainWindow : Window
         {
             uint dpi = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
             VariantInfo.Visibility = Visibility.Visible;
-            string description = $"{Root.ActualTheme} | actual DPI {dpi} | fixture scale {layoutScale:0.0}x"
+            string description = $"{Root.ActualTheme} | actual DPI {dpi} | fixture scale {layoutScale:0.##}x"
                 + (layoutScale != 1 ? " (not monitor DPI)" : "");
             int tick = 0;
             VariantInfo.Text = description + " | tick 0";

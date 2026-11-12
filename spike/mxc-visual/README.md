@@ -367,7 +367,12 @@ Two different applications are deliberately kept separate:
   remains blocked in the controls documented below.
 - `--sample-calculator N`: our unpackaged WinUI calculator in the existing
   fixture, with visible calculations, history and stable automation IDs.
-  Canvas/app titles explicitly say **Sample calculator**.
+  Canvas/app titles explicitly say **Sample calculator**. Odd/even members
+  alternate light/dark; pairs cycle through 100%, 125%, 150% and 175% layout
+  scale. Sixteen members give two of each theme/scale combination.
+  Scaled members are labeled **sim**, with measured monitor DPI alongside.
+  Verification checks both the reported scale and the actual PNG dimensions;
+  no OS DPI setting is changed.
 
 ```powershell
 node variant-run.mjs --prepare evidence\sample-calculator-one --sample-calculator 1
@@ -397,6 +402,42 @@ includes the unpackaged x64 sample under emulation on this ARM64 host.
 This was one control, not a sixteen-session qualification. It disproves a
 blanket inability to automate/capture apps here, but does not identify or fix
 the Windows Calculator package's window/provider problem.
+
+**Mixed sixteen-session attempt, November 12 UTC: failed during warm-up.**
+One batch created all sixteen real Full sessions. The first two 100% sample
+workers (light and dark) reached readiness; the third, light at 125%, exceeded
+the startup-preview helper's 30-second process deadline. The broker cancelled
+the waiting workers before releasing capture; the other thirteen workers never
+started. There are **zero measured stream frames and no sixteen-camera video**.
+The first two workers' barrier EOF errors are cancellation fallout, not separate
+successful streams.
+
+Application Error event 1000 also recorded the third sample's
+`HelloWinUI.exe` failing in the **app-local `dwmcorei.dll`**, version
+`12.6.5.0`, offset `0xae65`, with fast-fail exception `0xc0000409`. This code
+alone does not establish a buffer overrun. The helper timeout does not identify
+which startup/capture operation blocked, and the event does not establish
+whether scaling, sixteen-session load, or their interaction caused the failure.
+Do not describe this as a proven sixteen-session capacity limit.
+
+Read-only WMI queries stalled during the run, so camera observation resumed
+using `GlobalMemoryStatusEx`. Its later samples reached a minimum of 12.75 GiB
+available memory; earlier memory coverage was interrupted. WMI responded again
+after teardown. The host did not reboot. All sixteen native session removals
+and original-account removals were confirmed, and the broker pending queue
+was empty. However, the independent profile audit found **one original profile
+still loaded**, plus sixteen retained companion profiles (194 -> 210), one of
+which was also loaded. These loaded remnants were not deleted; SDK deprovision
+receipts were not replayed.
+
+The attempt used candidate
+`BFCDB0B85B7D9F5DD40B6374EB18C9680B0ACBE84D55E28F96C0E9C3AA688C82`.
+Its 125 broker checks, three helper checks and 75 Node checks passed offline,
+including the sixteen-entry theme/scale matrix and pixel-size assertions.
+The native run was stopped without retrying or running extra preflight batches.
+Resolve the loaded-profile uncertainty and obtain approval before another
+native control; a low-concurrency 125% control would separate scaling from the
+sixteen-session condition.
 
 The Windows Calculator workload activates
 `Microsoft.WindowsCalculator_8wekyb3d8bbwe!App` (the app launched by `calc.exe`)

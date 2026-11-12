@@ -16,8 +16,11 @@ commands used by both human clicks and UI Automation.
 Use the [visual-farm instructions](../../spike/mxc-visual/README.md) to prepare
 and explicitly approve an isolated sample-calculator control. The spike supplies
 a fresh `SBX_VISUAL_OUTPUT` directory for measured appearance metadata. Odd/even
-sample numbers select light/dark appearance; actual DPI and rasterization scale
-are recorded, not simulated.
+sample numbers select light/dark appearance. Each consecutive pair cycles
+through 100%, 125%, 150% and 175% layout scaling, giving two examples of every
+theme/scale combination in a sixteen-member batch. Scaling is a clearly
+labeled XAML render transform, **not a monitor DPI change**. Actual window DPI
+and XAML rasterization scale are measured separately.
 
 ## Build (host, no app launch)
 

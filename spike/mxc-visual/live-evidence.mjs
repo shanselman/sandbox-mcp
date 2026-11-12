@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { atomicJson } from './broker-client-state.mjs';
 import { validatePng } from './png-evidence.mjs';
 import { capturePolicy } from './capture-policy.mjs';
-import { calculatorIndex, sampleCalculatorIndex } from './visual-workloads.mjs';
+import { calculatorIndex, sampleCalculatorIndex, sampleAppearance } from './visual-workloads.mjs';
 export { validatePng } from './png-evidence.mjs';
 
 export function validateFrame(frame) {
@@ -175,9 +175,9 @@ export function summarizeStream(stream, fixture, expectedVariant, policyInput) {
   if (new Set(good.map(frame => frame.sessionId)).size !== 1 || new Set(good.map(frame => frame.pid)).size !== 1)
     throw new Error('Stream mixes different sessions/processes');
   const expectedTheme = expectedVariant === 'light' ? 'Light' : 'Dark';
-  const expectedScale = expectedVariant === 'dark-large' ? 1.5 : 1;
   const calculator = calculatorIndex(expectedVariant);
   const sample = sampleCalculatorIndex(expectedVariant);
+  const expectedScale = sample ? sampleAppearance(expectedVariant).fixtureLayoutScale : expectedVariant === 'dark-large' ? 1.5 : 1;
   const appearanceValid = sample
     ? fixture?.workload === 'calculator-sample' && fixture.application === 'SandboxShowcase.WinUI.Calculator'
       && fixture.theme === (sample % 2 ? 'Light' : 'Dark') && Number.isFinite(fixture.rasterizationScale) && fixture.rasterizationScale > 0
@@ -189,6 +189,9 @@ export function summarizeStream(stream, fixture, expectedVariant, policyInput) {
     || fixture.fixtureLayoutScale !== expectedScale || !Number.isFinite(fixture.actualWindowDpi) || fixture.actualWindowDpi <= 0 || fixture.dpiWasChanged !== false
     || fixture.scaleIsSimulation !== (expectedScale !== 1) || good.some(frame => frame.actualWindowDpi !== fixture.actualWindowDpi))
     throw new Error('Measured fixture settings differ from requested variant');
+  if (sample && good.some(frame => frame.width !== Math.trunc(640 * fixture.actualWindowDpi / 96 * expectedScale)
+    || frame.height !== Math.trunc(560 * fixture.actualWindowDpi / 96 * expectedScale)))
+    throw new Error('Sample calculator capture dimensions do not match the requested layout scale and measured DPI');
   if (calculator) {
     const expected = [17 + 2 * calculator, 60 + 3 * calculator, 100];
     if (stream.workload !== (sample ? 'calculator-sample' : 'calculator') || stream.automationChecks?.length !== 3

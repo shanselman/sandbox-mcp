@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { batchVariants, CALCULATOR_VARIANTS, SAMPLE_CALCULATOR_VARIANTS, FIXTURE_VARIANTS } from '../visual-workloads.mjs';
+import { batchVariants, CALCULATOR_VARIANTS, SAMPLE_CALCULATOR_VARIANTS, FIXTURE_VARIANTS, sampleAppearance } from '../visual-workloads.mjs';
 import { startCameraServer } from '../camera-server.mjs';
 import { pngFixture } from './png-fixture.mjs';
 
@@ -16,6 +16,13 @@ test('fixed Calculator grids are bounded and cannot repeat identities or escape 
   for (const variants of [[], [...CALCULATOR_VARIANTS, 'calculator-17'], ['calculator-00'], ['calculator-1'],
     ['calculator-01', 'calculator-01'], ['calculator-01', 'light'], ['..\\calc.exe'], ['sample-calculator-17']])
     assert.throws(() => batchVariants(batch(variants)), /Expected/);
+});
+test('sixteen sample tiles balance light/dark across four explicitly simulated layout sizes', () => {
+  const appearances = SAMPLE_CALCULATOR_VARIANTS.map(sampleAppearance);
+  for (const theme of ['Light', 'Dark']) for (const scale of [1, 1.25, 1.5, 1.75])
+    assert.equal(appearances.filter(item => item.theme === theme && item.fixtureLayoutScale === scale
+      && item.scaleIsSimulation === (scale !== 1)).length, 2);
+  assert.throws(() => sampleAppearance('calculator-01'), /sample-calculator/);
 });
 
 test('camera routes show sixteen separate Calculator tiles and only serve allowlisted frame paths', async t => {

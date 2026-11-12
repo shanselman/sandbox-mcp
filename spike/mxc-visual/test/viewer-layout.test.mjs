@@ -247,6 +247,19 @@ test('startup pictures remain visible when automation fails before the measured 
   assert.equal(tiles()[0].children[1].children[0].hidden, false);
   assert.equal(tiles()[0].children[0].children[1].textContent, 'FAILED');
 });
+test('compact tile labels distinguish requested layout simulation from measured monitor DPI', () => {
+  const { context, tiles } = harness();
+  const state = batch(1);
+  state.runs[0].progress = null;
+  state.runs[0].requestedAppearance = { theme: 'Dark', fixtureLayoutScale: 1.75, scaleIsSimulation: true };
+  context.renderBatch(state);
+  const label = tiles()[0].children[0].children[2];
+  assert.match(label.textContent, /Dark · 175% sim · requested/);
+  state.runs[0].progress = { frame: { sequence: 0, at: '2026-11-11T00:00:00Z',
+    fixture: { ...state.runs[0].requestedAppearance, actualWindowDpi: 96 } } };
+  context.renderBatch(state);
+  assert.match(label.textContent, /175% sim · 96 DPI/);
+});
 
 const browserPath = process.env.VIEWER_TEST_BROWSER ?? [
   process.env['ProgramFiles(x86)'] && path.join(process.env['ProgramFiles(x86)'], 'Microsoft', 'Edge', 'Application', 'msedge.exe'),

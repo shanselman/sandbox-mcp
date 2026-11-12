@@ -16,7 +16,7 @@ Workers warm up one at a time, then capture together. Completed tiles loop recor
 <main id="grid" aria-label="Agent session camera tiles" data-density="standard"></main>
 <footer><p id="details">Waiting for session evidence.</p>
 <p id="appearance" aria-live="polite"></p>
-<p><strong>DPI honesty:</strong> “large” uses a 1.5× fixture render transform. It is not a changed monitor DPI.</p>
+<p><strong>DPI honesty:</strong> layout scaling changes the sample's render transform, not monitor DPI. Tiles report actual DPI separately.</p>
 <p>Tile size adapts to the number of sessions. Expand a tile’s evidence for capture details. Layout capacity is not broker capacity.</p>
 <p>Live frames update as captured. Finished recordings loop at the original capture timing, with a one-second hold on the final frame.
 Use video controls to pause or seek; reduced-motion preferences disable autoplay.</p>

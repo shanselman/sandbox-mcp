@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { atomicJson } from './broker-client-state.mjs';
 import { readBatch } from './live-evidence.mjs';
 import { capturePolicy, policyArguments, describePolicy, LEGACY_CAPTURE_POLICY } from './capture-policy.mjs';
-import { FIXTURE_VARIANTS, CALCULATOR_VARIANTS, SAMPLE_CALCULATOR_VARIANTS, batchVariants } from './visual-workloads.mjs';
+import { FIXTURE_VARIANTS, CALCULATOR_VARIANTS, SAMPLE_CALCULATOR_VARIANTS, batchVariants, sampleAppearance } from './visual-workloads.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const options = policyArguments(process.argv.slice(2));
@@ -23,7 +23,8 @@ if (prepare) {
   fs.mkdirSync(root, { recursive: true });
   atomicJson(batchFile, { schema: 1, startedAt: new Date().toISOString(), mode: 'concurrent', targetFps: 1,
     capturePolicy: options.policy, runs: (calculatorCount ? (sampleCalculator ? SAMPLE_CALCULATOR_VARIANTS : CALCULATOR_VARIANTS).slice(0, calculatorCount) : FIXTURE_VARIANTS)
-      .map(variant => ({ variant, ...(calculatorCount ? { name: `${sampleCalculator ? 'Sample calculator' : 'Windows Calculator'} ${Number(variant.slice(-2))}` } : {}), state: 'pending' })) });
+      .map(variant => ({ variant, ...(calculatorCount ? { name: `${sampleCalculator ? 'Sample calculator' : 'Windows Calculator'} ${Number(variant.slice(-2))}` } : {}),
+        ...(sampleCalculator ? { requestedAppearance: sampleAppearance(variant) } : {}), state: 'pending' })) });
   console.log(JSON.stringify({ root, prepared: true }));
 } else {
   const batch = readBatch(root);

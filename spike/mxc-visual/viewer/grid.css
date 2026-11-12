@@ -48,6 +48,7 @@ aside { background: var(--canvas-surface); padding: 8px; border: 1px solid var(-
 article { border: 1px solid var(--canvas-border); border-radius: 6px; background: var(--canvas-surface); overflow: hidden; min-width: 0; }
 .tile-head { padding: 7px 8px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 h2 { font-size: 13px; margin: 0; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.variant-label { font-size: 10px; line-height: 1.3; color: var(--canvas-muted); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .badge, #summary { padding: 3px 6px; border-radius: 4px; font-size: 11px; line-height: 1.3; background: var(--canvas-raised); max-width: 100%; overflow-wrap: anywhere; }
 .badge.live { background: color-mix(in srgb, var(--canvas-success) 12%, var(--canvas-bg)); color: var(--canvas-success); }
 .badge.stale, .badge.failed, .badge.capture-error, .badge.source-failed { background: color-mix(in srgb, var(--canvas-danger) 12%, var(--canvas-bg)); color: var(--canvas-danger); }

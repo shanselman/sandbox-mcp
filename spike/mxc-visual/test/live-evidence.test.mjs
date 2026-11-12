@@ -39,9 +39,27 @@ test('sample calculator records measured appearance and cannot masquerade as Win
     theme: 'Light', actualWindowDpi: 96, rasterizationScale: 1, fixtureLayoutScale: 1, dpiWasChanged: false, scaleIsSimulation: false };
   const data = { ...stream(), workload: 'calculator-sample',
     automationChecks: [19, 63, 100].map(value => ({ expected: value, actual: value, passed: true })) };
+  data.frames = data.frames.map(frame => ({ ...frame, width: 640, height: 560 }));
   assert.equal(summarizeStream(data, settings, settings.variant).workload, 'calculator-sample');
   assert.throws(() => summarizeStream({ ...data, workload: 'calculator' }, settings, settings.variant), /arithmetic assertions/);
   assert.throws(() => summarizeStream(data, { ...settings, application: 'Microsoft.WindowsCalculator' }, settings.variant), /settings/);
+});
+test('all sixteen sample appearance combinations require real matching capture sizes and honest DPI flags', () => {
+  const sizes = [1, 1.25, 1.5, 1.75];
+  for (let index = 1; index <= 16; index++) {
+    const scale = sizes[Math.floor((index - 1) / 2) % 4];
+    const variant = `sample-calculator-${String(index).padStart(2, '0')}`;
+    const settings = { variant, workload: 'calculator-sample', application: 'SandboxShowcase.WinUI.Calculator',
+      theme: index % 2 ? 'Light' : 'Dark', actualWindowDpi: 96, rasterizationScale: 1,
+      fixtureLayoutScale: scale, dpiWasChanged: false, scaleIsSimulation: scale !== 1 };
+    const data = { ...stream(), workload: 'calculator-sample',
+      automationChecks: [17 + index * 2, 60 + index * 3, 100].map(value => ({ expected: value, actual: value, passed: true })) };
+    data.frames = data.frames.map(frame => ({ ...frame, width: 640 * scale, height: 560 * scale }));
+    assert.equal(summarizeStream(data, settings, variant).fixtureLayoutScale, scale);
+    assert.throws(() => summarizeStream(data, { ...settings, dpiWasChanged: true }, variant), /settings/);
+    data.frames[0].width++;
+    assert.throws(() => summarizeStream(data, settings, variant), /capture dimensions/);
+  }
 });
 test('startup picture is visible before readiness, bound to the session, and excluded from measured frames', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'startup-preview-'));
