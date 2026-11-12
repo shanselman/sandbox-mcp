@@ -7,7 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { provisionContainer, deprovisionContainer } from '@microsoft/mxc-sdk/v1';
 import { ISO_REQUEST } from './session.mjs';
-import { atomicJson, readRecord, mergePending, copyEvidence, verifyVisualEvidence, recoverIndependent, requireDeprovisionReceipt } from './broker-client-state.mjs';
+import { atomicJson, readRecord, mergePending, copyEvidence, verifyVisualEvidence, recoverIndependent, requireDeprovisionReceipt, requireStartupPacing } from './broker-client-state.mjs';
 import { startLiveCollector, requireFreshLiveOutput, readBatch } from './live-evidence.mjs';
 import { verifyStreamEvidence } from './stream-evidence.mjs';
 import { capturePolicy, policyArguments, LEGACY_CAPTURE_POLICY } from './capture-policy.mjs';
@@ -26,8 +26,7 @@ if (!['status', 'run-fixture', 'run-grid', 'recover'].includes(operation)
   || options.explicit && (operation !== 'run-fixture' || !variant))
   throw new Error('Expected status, recover, run-grid <prepared-directory>, or run-fixture [light|dark|dark-large] [live-output-directory] [--policy <JSON-file>]');
 const preparedBatch = operation === 'run-grid' ? readBatch(gridOutput) : null;
-const startupPacing = preparedBatch?.startupPacing ?? 'immediate';
-if (!['immediate', 'settle-15s'].includes(startupPacing)) throw new Error('Unsupported saved startup pacing');
+const startupPacing = requireStartupPacing(preparedBatch?.startupPacing);
 const policy = preparedBatch
   ? capturePolicy(Object.hasOwn(preparedBatch, 'capturePolicy') ? preparedBatch.capturePolicy : LEGACY_CAPTURE_POLICY) : options.policy;
 const install = path.join(process.env.ProgramW6432 ?? process.env.ProgramFiles, 'SandboxMcpFullBroker');

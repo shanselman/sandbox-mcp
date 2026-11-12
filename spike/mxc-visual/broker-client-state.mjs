@@ -4,6 +4,13 @@ import { randomUUID, createHash } from 'node:crypto';
 import { validatePng } from './png-evidence.mjs';
 import { calculatorIndex } from './visual-workloads.mjs';
 
+export function requireStartupPacing(mode) {
+  const pacing = mode ?? 'immediate';
+  if (!['immediate', 'settle-2s', 'settle-5s', 'settle-6s', 'settle-15s'].includes(pacing))
+    throw new Error('Unsupported saved startup pacing');
+  return pacing;
+}
+
 export function requireId(id) {
   if (typeof id !== 'string' || !/^[a-f0-9]{32}$/.test(id)) throw new Error('Invalid request ID');
   return id;

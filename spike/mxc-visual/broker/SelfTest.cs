@@ -84,8 +84,10 @@ internal static class SelfTest
             Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "run-grid", Members: members), Protocol.Json)));
         Check("fixed startup pacing accepted but arbitrary delays refused", () =>
         {
-            Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "run-grid", Members: members, StartupPacing: "settle-15s"), Protocol.Json));
-            Reject(() => Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "run-grid", Members: members, StartupPacing: "sleep forever"), Protocol.Json)));
+            foreach (string mode in new[] { "immediate", "settle-2s", "settle-5s", "settle-6s", "settle-15s" })
+                Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "run-grid", Members: members, StartupPacing: mode), Protocol.Json));
+            foreach (string mode in new[] { "sleep forever", "settle-3s", "settle-02s", "SETTLE-2S", "" })
+                Reject(() => Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "run-grid", Members: members, StartupPacing: mode), Protocol.Json)));
             Reject(() => Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(members[0].AsRequest() with { StartupPacing = "settle-15s" }, Protocol.Json)));
         });
         Check("unbounded grid rejected", () => Reject(() =>

@@ -53,8 +53,7 @@ internal static class Protocol
             throw new InvalidDataException("Unexpected operation field");
         if (request.Operation == "run-grid")
         {
-            if (request.StartupPacing is not (null or "immediate" or "settle-15s"))
-                throw new InvalidDataException("Unsupported fixed startup pacing");
+            StartupPacing.DelayMs(request.StartupPacing);
             if (request.Members is not { Length: >= 1 and <= VisualWorkloads.MaxSessions })
                 throw new InvalidDataException("Grid requires one to sixteen fixed workloads");
             foreach (var member in request.Members)

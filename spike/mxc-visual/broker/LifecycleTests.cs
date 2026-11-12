@@ -23,22 +23,33 @@ internal static class LifecycleTests
 
     public static void Register(Action<string, Action> check)
     {
-        check("fixed creation pacing occurs only between sessions before any worker", () =>
+        foreach (var (mode, delay) in new[] { ("immediate", 0), ("settle-2s", 2000), ("settle-5s", 5000), ("settle-6s", 6000), ("settle-15s", 15000) })
+        check($"fixed creation pacing {mode} occurs only between sessions before any worker", () =>
         {
             var backend = new Fake();
-            var results = Runtime.RunGroup(Requests, Config, CancellationToken.None, backend, 15000)
+            var results = Runtime.RunGroup(Requests, Config, CancellationToken.None, backend, StartupPacing.DelayMs(mode))
                 .Select(value => JsonSerializer.SerializeToElement(value, Protocol.Json)).ToArray();
-            Assert(backend.DelayedMs == 30000, "Expected two fifteen-second gaps, not a trailing delay");
+            Assert(backend.DelayedMs == delay * 2, "Expected exactly two fixed gaps, not a trailing delay");
             Assert(results.All(result => result.GetProperty("report").GetProperty("success").GetBoolean()), "Paced workers failed");
             Assert(results[1].GetProperty("report").GetProperty("createdAt").GetDateTimeOffset()
-                - results[0].GetProperty("report").GetProperty("createdAt").GetDateTimeOffset() == TimeSpan.FromSeconds(15), "Wrong pacing interval");
+                - results[0].GetProperty("report").GetProperty("createdAt").GetDateTimeOffset() == TimeSpan.FromMilliseconds(delay), "Wrong pacing interval");
+            Assert(results.All(result => result.GetProperty("report").GetProperty("createBeginAt").GetDateTimeOffset()
+                <= result.GetProperty("report").GetProperty("createdAt").GetDateTimeOffset()), "Missing native create start");
             Assert(backend.Prepared.SequenceEqual([10, 11, 12]) && backend.Owners.Count == 0, "Warm-up/cleanup changed");
         });
-        check("cancellation during creation settling stops further creation and cleans the owned session", () =>
+        check("unsupported creation delay is refused before platform or identity work", () =>
+        {
+            var backend = new Fake { PlatformFailure = true };
+            try { Runtime.RunGroup(Requests, Config, CancellationToken.None, backend, 3000); }
+            catch (ArgumentOutOfRangeException) { return; }
+            throw new Exception("Arbitrary creation delay accepted");
+        });
+        foreach (int delay in new[] { 2000, 5000, 6000, 15000 })
+        check($"cancellation during {delay}ms creation settling stops further creation and cleans the owned session", () =>
         {
             using var cancel = new CancellationTokenSource();
             var backend = new Fake { AfterDelay = () => cancel.Cancel() };
-            Runtime.RunGroup(Requests, Config, cancel.Token, backend, 15000);
+            Runtime.RunGroup(Requests, Config, cancel.Token, backend, delay);
             Assert(backend.Creates == 1 && backend.Workers.IsEmpty && backend.Owners.Count == 0, "Pacing cancellation leaked or continued");
         });
         check("offline lifecycle: all sessions exist before workers; credentials disposed; exact cleanup", () =>

@@ -11,7 +11,7 @@ internal static class Runtime
         if (request.Operation == "run-grid")
         {
             var results = RunGroup(request.Members!.Select(member => member.AsRequest()).ToArray(), config, cancel,
-                new WindowsSessionBackend(), request.StartupPacing == "settle-15s" ? 15000 : 0);
+                new WindowsSessionBackend(), StartupPacing.DelayMs(request.StartupPacing));
             return new { ok = true, results };
         }
         if (Directory.Exists(Paths.JobDirectory(request.Id!))) return Result(request.Id!);
@@ -29,7 +29,7 @@ internal static class Runtime
     internal static object[] RunGroup(Request[] requests, Configuration config, CancellationToken cancel, ISessionBackend backend,
         int creationDelayMs = 0)
     {
-        if (creationDelayMs is not (0 or 15000)) throw new ArgumentOutOfRangeException(nameof(creationDelayMs));
+        StartupPacing.ValidateDelay(creationDelayMs);
         backend.CheckPlatform();
         if (requests.Length is < 1 or > VisualWorkloads.MaxSessions) throw new InvalidDataException("Unsupported group size");
         if (requests.Any(request => backend.JournalExists(request.Id!)))
@@ -63,6 +63,7 @@ internal static class Runtime
                 backend.Save(work.Lease);
                 work.Journaled = true;
                 var timer = Stopwatch.StartNew();
+                work.Report["createBeginAt"] = backend.Now;
                 int sessionId = backend.CreateSession(credential);
                 work.Report["created"] = true;
                 work.Report["createMs"] = timer.ElapsedMilliseconds;

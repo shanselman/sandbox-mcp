@@ -3,13 +3,21 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { requireId, atomicJson, readRecord, mergePending, copyEvidence, verifyVisualEvidence, recoverIndependent, requireDeprovisionReceipt } from '../broker-client-state.mjs';
+import { requireId, atomicJson, readRecord, mergePending, copyEvidence, verifyVisualEvidence, recoverIndependent, requireDeprovisionReceipt, requireStartupPacing } from '../broker-client-state.mjs';
 import { pngFixture } from './png-fixture.mjs';
 
 const id = '0123456789abcdef0123456789abcdef';
 const metadata = { agentUserName: 'A1-B2', agentUserSid: 'S-1-5-21-1-2-3-1001' };
 const request = { id, agentName: metadata.agentUserName, agentSid: metadata.agentUserSid, containerId: 'opaque:never-parse-this' };
 const pending = { id, agentName: request.agentName, agentSid: request.agentSid };
+test('saved startup pacing accepts only the fixed experiment modes and preserves the default', () => {
+  for (const mode of ['immediate', 'settle-2s', 'settle-5s', 'settle-6s', 'settle-15s'])
+    assert.equal(requireStartupPacing(mode), mode);
+  for (const mode of [undefined, null]) assert.equal(requireStartupPacing(mode), 'immediate');
+  for (const mode of ['', 2000, 'settle-3s', 'settle-02s', 'SETTLE-2S', {}, 'sleep forever'])
+    assert.throws(() => requireStartupPacing(mode), /Unsupported saved startup pacing/);
+});
+
 function temporary(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'full-broker-test-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

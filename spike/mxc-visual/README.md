@@ -601,6 +601,10 @@ collected evidence directory. Entries bracket XAML initialization, DPI lookup,
 the initial resize, theme assignment, calculator creation, scaled resize,
 window activation and the loaded callback. This preserves startup evidence
 even when the app never paints and its profile is subsequently removed.
+The worker also records the OS process creation time as `appStartedAt` in
+`worker.json` (or `appStartTimestampError` if unavailable), so launch-to-first
+managed trace and launch-to-ready latency do not require inspecting a dump.
+Broker reports include `createBeginAt` immediately before each native creation.
 
 On a sample-worker failure **before stream preparation**, the worker attempts
 one local `startup-hang.dmp` before terminating its owned app. A fixed helper
@@ -613,14 +617,15 @@ camera server or committed. Only the exact dump basename is copied, with an
 MDMP signature check and a 1-GiB limit. Existing large copies are compared using
 bounded-buffer SHA-256 reads rather than loading whole dumps into Node memory.
 
-Prepared grid JSON can select `"startupPacing": "settle-15s"` for a controlled
+Prepared grid JSON can select `"startupPacing": "settle-2s"`, `"settle-5s"`,
+`"settle-6s"` or `"settle-15s"` for a controlled
 comparison. Omitted or `"immediate"` preserves the baseline. The paced variant
-waits fifteen seconds **between native desktop creations**, not between UIA
+waits the selected fixed interval **between native desktop creations**, not between UIA
 steps; eight members have seven waits. Waits are cancellation-aware and recorded
 with start/end timestamps. All existing worker readiness, twenty-second window
 visibility, capture-quality and process-exit gates remain unchanged. The
-protocol accepts only these two fixed modes, not an arbitrary sleep/command.
-Both variants should use the same installed candidate and workload matrix.
+protocol accepts only these five fixed modes, not an arbitrary sleep/command.
+Comparisons should use the same installed candidate and workload matrix.
 One comparison is diagnostic evidence, not a statistically established fix.
 
 **Instrumented baseline result (November 12 UTC): slow startup reproduced,

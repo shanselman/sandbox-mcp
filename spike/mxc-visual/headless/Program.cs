@@ -445,6 +445,8 @@ internal static class Program
             app = (calculator && !VisualWorkloads.IsSampleCalculator(job.Variant) ? CalculatorApp.Start() : Process.Start(start))
                 ?? throw new InvalidOperationException("App failed to start");
             report["appPid"] = app.Id;
+            try { report["appStartedAt"] = new DateTimeOffset(app.StartTime.ToUniversalTime()); }
+            catch (Exception error) { report["appStartTimestampError"] = error.Message; }
             var startup = Helper(job, report, "preview", "--pid", app.Id.ToString(), "--out", job.Output);
             report["startup"] = startup;
             if (startup.ExitCode != 0) throw new InvalidOperationException("Startup picture failed before automation readiness");
