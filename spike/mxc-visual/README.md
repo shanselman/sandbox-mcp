@@ -527,6 +527,73 @@ The sixteen-session startup condition remains a stronger lead than a
 deterministic scaling defect. No eight-session run was authorized or started
 as part of this control.
 
+#### Tracked post-reboot capacity ramp: 1, 2, 4, 8, 12, 16
+
+The user subsequently approved the complete staged ramp with logging and
+per-stage gates. Each new stage required the previous stage to pass, with
+unchanged timing/automation/image checks and explicit host/profile cleanup.
+All stages used installed diagnostic candidate
+`AFB156DFAF583D33FDB127A96B2F028134F070B9F406E17CB69492BD2610E59F`,
+the same fixture payload, and the fixed sample theme/scale matrix.
+
+| Requested sessions | Outcome | Valid stream PNGs | Minimum member fps | Worst gap ms | Common coverage ms | Minimum sampled free GiB | Maximum sampled test processes |
+|---:|---|---:|---:|---:|---:|---:|---:|
+| 1 | Passed | 30 | 1.006 | 1,035 | 28,824 | 33.448 | 80 |
+| 2 | Passed | 60 | 1.006 | 1,037 | 28,817 | 34.819 | 157 |
+| 4 | Passed | 120 | 1.006 | 1,076 | 28,746 | 29.826 | 296 |
+| 8 | Failed during startup | 0 | N/A | N/A | 0 | 26.152 | 498 |
+| 12 | Not run: escalation stopped | N/A | N/A | N/A | N/A | N/A | N/A |
+| 16 | Not run: escalation stopped | N/A | N/A | N/A | N/A | N/A | N/A |
+
+Durations including independent post-run audits were 68.4, 88.6, 149.9 and
+273.0 seconds for the four attempted stages. Cameras were observed live
+together at one, two and four sessions. Those stages verified all 210 stream
+images, 21 arithmetic assertions and original-session/account/profile cleanup.
+Their recorded videos were available in their respective canvases.
+
+At eight, all eight native sessions were created. Only the first three workers
+started; two reached the shared capture barrier. The third preview helper
+returned exit 1 rather than timing out at the worker's 30-second budget. Its
+phase markers show:
+
+- Display/DWM/process/WGC diagnostics completed.
+- `preview.find-window` waited approximately 20.049 seconds.
+- Enumeration found an **invisible** `WinUIDesktopWin32WindowClass` window
+  still titled **Hello WinUI**, at the default **520 x 400** size.
+- There was no visible window, no `preview.printwindow` marker, no measured
+  stream frame and no fixture-settings record from the app's loaded callback.
+
+This narrows this run's failure to app startup/window visibility, **before
+PrintWindow**, rather than a failure to encode or collect frames. The expected
+125% sample calculator window was 800 x 700. That same variant passed both the
+isolated 125% control and the four-member stage; a deterministic layout-scaling
+failure is therefore less consistent with the observations. No relevant
+Application Error event was found in the eight-session run, unlike the earlier
+sixteen-session graphics fast-fail. The two failures must not be conflated.
+
+One cancelled ready worker's final `worker.json` was not preserved, although
+its readiness receipt and before/after images were retained. No clean helper
+exit is inferred from that missing report. One five-second viewer-state HTTP
+observation timed out; the observer recorded the gap and continued. Memory
+values are samples, not proof of the instantaneous minimum or of absence of
+CPU/graphics/session-startup bottlenecks. Maximum sampled host committed memory
+at eight was 44.268 GiB, with physical memory still available.
+
+The host did not reboot, all fifteen original accounts and native sessions
+created across the ramp were removed, no original profiles remained for those
+fifteen identities, and the broker pending queue was empty. Fifteen additional
+companion profiles remained (211 -> 226), **all unloaded**. No handles,
+services or profiles were forcibly changed. Twelve and sixteen were not
+provisioned, and no stage was silently retried.
+
+Ignored local evidence under `capacity-ramp-20261112-054922` contains a
+`stage-ledger.jsonl`, per-stage `stage-outcome.json`, live/resource observation
+JSONL, full broker/helper output, and independent image/host audit receipts.
+The 12/16 stage outcomes explicitly say `not-run`. Four simultaneous sessions
+are demonstrated by this ramp, not statistically qualified as reliable;
+startup pacing and per-user background initialization remain investigation
+targets rather than established root causes or permission to raise timeouts.
+
 The Windows Calculator workload activates
 `Microsoft.WindowsCalculator_8wekyb3d8bbwe!App` (the app launched by `calc.exe`)
 **as the owned agent**, never as System. The app must be installed and available
