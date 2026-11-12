@@ -487,15 +487,45 @@ including on timeout. Subprocess execution deadlines are unchanged; output
 draining is bounded and does not turn a nonzero exit/timeout into success.
 The 128 broker checks include real synthetic success, error and stalled-helper
 processes and passed three times; all three components build, and the three
-helper readiness checks pass. These changes are **not installed or validated
-in a new native run**.
+helper readiness checks pass. At the end of that offline investigation, the
+diagnostic changes had not yet been installed or exercised in a native run.
 
-Before another control, preserve this evidence and deliberately resolve the
-stale-profile state (a user-controlled reboot followed by a fresh audit is
-preferable to forcibly closing service handles). After separate approval and
-installing the diagnostic candidate, one 125% sample session can isolate the
-scaling path. Only then consider eight sessions with the same workload matrix;
-eight reduces startup load but is not yet a demonstrated capacity.
+#### Post-reboot isolated 125% control
+
+The user rebooted and separately approved installing the diagnostics and
+running **one** `sample-calculator-03` control at 125% simulated layout scale.
+The new boot was confirmed. Both previously loaded original/companion profiles
+and their Classes hives were unloaded; their profile records remained.
+All 210 companion profiles were unloaded, the broker had no pending work, and
+41.38 GiB of physical memory was available at the initial audit. Reboot was a
+baseline reset, not a demonstrated fix for the graphics failure or a general
+prerequisite for running the farm.
+
+Candidate `AFB156DFAF583D33FDB127A96B2F028134F070B9F406E17CB69492BD2610E59F`
+used diagnostics source `409401f` and **all 520 fixture files byte-identical**
+to the failed sixteen-session candidate. All 538 installed files matched the
+new package. The isolated control passed:
+
+| Observation | Result |
+|---|---|
+| Application | Same sample calculator 03, Light, 125% simulated layout |
+| Actual DPI / capture size | 96 DPI / 800 x 700 PNGs |
+| Verified arithmetic | `13 + 10 = 23`, `23 x 3 = 69`, `103 - 3 = 100` |
+| Stream | 30 valid collected PNGs; 29 distinct images |
+| Measured cadence | 1.006 fps; maximum gap 1,032 ms |
+| Preview helper | Exited 0 in 3.626 seconds; window wait about 2.632 seconds, PrintWindow about 285 ms |
+| Other helpers | All exited 0; phase markers retained in `worker.json` |
+| Host/session cleanup | No relevant Application Error or reboot; original session/account/profile removed; broker pending queue empty |
+| Companion cleanup | One additional unloaded profile retained, 210 -> 211 |
+
+The canvas showed the startup preview, advancing live frames and the resulting
+29.827-second recorded video. This demonstrates that the same 125% app payload
+can render and automate in isolation after reboot. It does **not** prove that
+the earlier failure was RAM exhaustion, establish a concurrency limit, or
+separate every effect of reboot, instrumentation and reduced session count.
+The sixteen-session startup condition remains a stronger lead than a
+deterministic scaling defect. No eight-session run was authorized or started
+as part of this control.
 
 The Windows Calculator workload activates
 `Microsoft.WindowsCalculator_8wekyb3d8bbwe!App` (the app launched by `calc.exe`)
