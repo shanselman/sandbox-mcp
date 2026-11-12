@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Text.Json;
 
 namespace SandboxMcp.FullBroker;
@@ -23,6 +24,37 @@ internal static class LifecycleTests
 
     public static void Register(Action<string, Action> check)
     {
+        foreach (bool workerFailure in new[] { false, true })
+        foreach (Exception failure in new Exception[] { new Win32Exception(1450, "Full session creation"), new IOException("Synthetic failure") })
+            check($"offline failure diagnostics: {(workerFailure ? "worker" : "group")} {failure.GetType().Name}", () =>
+            {
+                failure.Data["private-context"] = "synthetic-private-value";
+                var backend = workerFailure
+                    ? new Fake { PreparationFailure = 11, PreparationError = failure }
+                    : new Fake { AfterCreate = _ => throw failure };
+                var results = Run(backend);
+                var reports = workerFailure ? new[] { results[1].GetProperty("report") }
+                    : results.Select(result => result.GetProperty("report")).ToArray();
+                foreach (var report in reports)
+                {
+                    Assert(report.GetProperty("error").GetString() == failure.Message, "Original failure message was replaced");
+                    Assert(report.GetProperty("errorType").GetString() == failure.GetType().FullName, "Exception type lost");
+                    Assert(report.GetProperty("errorHResult").GetInt32() == failure.HResult, "Exception HRESULT lost");
+                    if (failure is Win32Exception native)
+                        Assert(report.GetProperty("nativeErrorCode").GetInt32() == native.NativeErrorCode, "Native error code lost");
+                    else Assert(!report.TryGetProperty("nativeErrorCode", out _), "Non-native failure invented a native code");
+                    Assert(!report.GetRawText().Contains("synthetic-private-value"), "Private exception data leaked");
+                    Assert(!report.GetProperty("success").GetBoolean() && report.GetProperty("sessionCleanupComplete").GetBoolean(),
+                        "Failure or cleanup verdict changed");
+                }
+                var persisted = backend.Journals[Requests[workerFailure ? 1 : 0].Id!].Result!.Value;
+                Assert(persisted.GetProperty("errorType").GetString() == failure.GetType().FullName
+                    && persisted.GetProperty("errorHResult").GetInt32() == failure.HResult, "Failure metadata was not persisted");
+                if (failure is Win32Exception)
+                    Assert(persisted.GetProperty("nativeErrorCode").GetInt32() == 1450, "Persisted native code lost");
+                Assert(backend.Owners.Count == 0 && backend.Stops.Count == (workerFailure ? 3 : 1)
+                    && backend.CredentialsCreated == backend.CredentialsDisposed, "Failure diagnostics changed resource cleanup");
+            });
         foreach (var (mode, delay) in new[] { ("immediate", 0), ("settle-2s", 2000), ("settle-5s", 5000), ("settle-6s", 6000), ("settle-15s", 15000) })
         check($"fixed creation pacing {mode} occurs only between sessions before any worker", () =>
         {
@@ -298,6 +330,7 @@ internal static class LifecycleTests
         public int Creates, CredentialsCreated, CredentialsDisposed, Validations, DelayedMs;
         public int CredentialFailure = -1, CreateFailure = -1, StopFailure = -1, WorkerFailure = -1;
         public int PreparationFailure = -1;
+        public Exception? PreparationError;
         public List<int> Prepared { get; } = [];
         public int? ReturnId;
         public bool CreateBeforeThrow, RetainStopped, PlatformFailure;
@@ -357,7 +390,7 @@ internal static class LifecycleTests
             Workers.Add(lease.SessionId!.Value);
             int index = lease.SessionId.Value - 10;
             Assert(Prepared.Count == index && !captureStart.IsSet, "Worker preparation was not serialized");
-            if (lease.SessionId == PreparationFailure) throw new IOException("Synthetic worker preparation failure");
+            if (lease.SessionId == PreparationFailure) throw PreparationError ?? new IOException("Synthetic worker preparation failure");
             Prepared.Add(lease.SessionId.Value);
             ready();
             captureStart.Wait(cancel);

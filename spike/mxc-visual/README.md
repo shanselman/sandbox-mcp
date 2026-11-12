@@ -605,6 +605,9 @@ The worker also records the OS process creation time as `appStartedAt` in
 `worker.json` (or `appStartTimestampError` if unavailable), so launch-to-first
 managed trace and launch-to-ready latency do not require inspecting a dump.
 Broker reports include `createBeginAt` immediately before each native creation.
+Worker/group failure reports retain the existing `error` message plus
+`errorType`, `errorHResult`, and `nativeErrorCode` for a `Win32Exception`.
+No exception data, stack trace, or credential object is added to these reports.
 
 On a sample-worker failure **before stream preparation**, the worker attempts
 one local `startup-hang.dmp` before terminating its owned app. A fixed helper
@@ -727,6 +730,118 @@ do not establish the exact blocking subsystem or prove a universal fifteen-
 second fix. Pacing remains explicit/opt-in; the baseline behavior is unchanged.
 Raw dumps remain local. Findings and per-condition ledgers are preserved under
 `startup-comparison-20261112-061435`.
+
+#### Resource pilot: CPU scheduling versus disk or memory pressure
+
+A later exploratory study added host-wide PDH sampling for available RAM,
+commit, page reads/writes, page-file usage, disk latency/queue/throughput, CPU,
+processor queue and context switches. The short-gap source candidate
+`9feb8d9` built and passed offline checks, but its UAC installation was
+**canceled**. That installation was not retried or bypassed. Therefore
+**2-, 5- and 6-second gaps were not tested**. Independently authorized capacity
+tests continued using the unchanged installed `9D9908B5...` fifteen-second
+candidate; these are not results for the uninstalled short-gap code.
+
+| Host-wide measurement | Eight sessions, 15-second gaps | Twelve requested sessions, 15-second gaps |
+|---|---:|---:|
+| Functional outcome | Passed, 240 valid frames / 24 arithmetic checks | Native creation of member 12 failed; no app worker launched |
+| All workers ready after batch start | 197.205 s | N/A |
+| Batch including independent audits | 322.0 s | 366.8 s, failed |
+| PDH samples | 160 | 181 |
+| CPU median / p90 | 72.8% / 99.9% | 95.5% / 100.0% |
+| Processor queue p90 / maximum | 56 / 122 | 71 / 209 |
+| Minimum sampled available RAM | 25.71 GiB | 23.73 GiB |
+| Maximum host commit / commit limit | 58.04 / 126.48 GiB | 62.59 / 126.48 GiB |
+| Sampled average disk-read latency p90 / maximum | 0.690 / 1.971 ms | 0.845 / 2.188 ms |
+| Disk queue p90 / maximum | 0 / 3 | 1 / 7 |
+| Page reads/sec p90 | 400.9 | 394.8 |
+| Page writes/sec p90 | 0 | 0 |
+| Maximum page-file usage | 0.680% | 0.673% |
+| Maximum sampled test-session processes | 554 | 729 |
+
+These are percentiles of approximately two-second **host-wide samples**, not
+individual I/O latency percentiles or exact workload attribution. No sampling
+gap exceeded three seconds; initial sampler startup took approximately five
+seconds. Page reads include executable and mapped-file demand paging and
+cannot, by themselves, establish swapping. The combination of substantial free
+RAM, low page-file usage, negligible page writes and low sampled disk latency
+does **not show a disk-thrashing or memory-exhaustion pattern** in these runs.
+High CPU utilization and long runnable queues are the stronger observed
+pressure signal. Sub-second spikes, per-GPU resource limits and individual
+service bottlenecks are not ruled out.
+
+The twelve-session attempt returned eleven native session IDs; creation of the
+twelfth failed before any calculator worker could start. A transient twelfth
+session was observed by process sampling. The installed broker retained only
+`"Full session creation"` and lost the native error code; a narrow session-log
+search found a disconnect with reason 0, not a specific cause. The configured
+logon timeout is twenty seconds, but the observed 30.379 seconds since the prior
+settling interval includes credential/preparation time and is **not** a measured
+native-call duration. Do not label the failure a proved timeout or a hard
+twelve-session product limit. The source now preserves exception type,
+HRESULT and Win32 error code for future worker/group failures, with offline
+tests; that change is also **not installed**.
+
+All twenty original accounts and session-cleanup receipts from the two
+attempts were confirmed, with no remaining original profiles for those
+identities and no new loaded companions. The twelve-member attempt left eleven
+new companion records and removed none; the total rose 242 -> 250 -> 261.
+The previously documented loaded profile pair remained untouched. No new
+Application Error or host reboot was observed. Sixteen was **not run** after
+the twelve-member failure. Prepared but unrun cases and the canceled-install
+boundary are explicitly recorded in `pacing-pilot-20261112-071056`.
+
+The old installed worker lacks the new exact `appStartedAt`/`createBeginAt`
+metrics, so the wrapper correctly marks timing completeness inconclusive even
+when the normal eight-session functional gate passes. Actual
+batch-start-to-all-ready remains available. There are fewer than six matched
+pairs: formal speed/reliability conclusions are **INCONCLUSIVE**, not a
+statistically established optimum.
+
+For this host/workload, **eight Full sessions at fifteen-second creation gaps
+is the largest demonstrated working operating point**, not a proven maximum
+or the shortest reliable gap. Keep sixteen as an experimental hard guard,
+not the advertised/default capacity. A readiness-driven admission policy with
+a bounded deadline is a better long-term target than claiming any fixed sleep
+is deterministic; it has not yet been implemented or qualified here.
+
+#### Session weight, display controls and desktop screenshots
+
+These Full sessions are **not the lightest Windows session kind**. The
+[pure-MXC control](../../docs/pure-mxc-profile-repro.md) exercised the lighter
+utility path: UIA worked, but WinUI client pixels remained blank and no DWM
+composition was observed. The Full-session/profile-classification bridge is
+the graphical path demonstrated here, and it starts substantial shell and
+per-user background activity.
+
+The current backend passes a null `InitialProgram`. A separately controlled
+fixed-initial-program experiment could test how much shell startup it avoids,
+but no evidence here proves it suppresses every logon task or management
+component. Do not disable EPM, security/enrollment services, driver services or
+arbitrary startup programs based only on process counts. A supported graphical
+headless/session-readiness contract remains preferable to private startup and
+profile workarounds.
+
+Actual window DPI remained **96** and session screen metrics **1920x1080**.
+The current inspected creation contract exposes no DPI/resolution field.
+The MXC `wxc_ui_probe` source calls `ChangeDisplaySettingsW` with `CDS_TEST`;
+that tests a mode, not a demonstrated per-session resolution change.
+Generic Windows display APIs may offer other mechanisms, but isolated,
+host-unaffected DPI/resolution control is **not established by this spike**.
+The 100/125/150/175% fixture transforms remain explicitly simulated; no host
+display setting was changed.
+
+Whole-desktop capture is already demonstrated in the raw evidence of the
+successful paced eight-session comparison: all sixteen before/after `screen`
+captures succeeded at 1920x1080. All sixteen `window-bitblt`, `printwindow-0`
+and `printwindow-2` attempts also succeeded at the corresponding app sizes.
+An inspected full-screen PNG shows the agent desktop's wallpaper, icons,
+taskbar, app and Start menu: this is **the agent desktop, not the physical
+host screen**. The reduced viewer directories intentionally contain only the
+selected app crops; per-method JSON and full-screen PNGs live under each
+`report.json` member's `evidence\visual` directory. Current continuous streams
+are app-window streams; desktop capture is presently before/after, not a
+second continuous desktop video.
 
 The Windows Calculator workload activates
 `Microsoft.WindowsCalculator_8wekyb3d8bbwe!App` (the app launched by `calc.exe`)

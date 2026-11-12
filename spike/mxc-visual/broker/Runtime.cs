@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Security.Principal;
 using System.Text.Json;
@@ -24,6 +25,14 @@ internal static class Runtime
         public Lease Lease { get; set; } = new(request, Guid.NewGuid().ToString("N"), baseline, null, "creating", DateTimeOffset.UtcNow);
         public bool Journaled { get; set; }
         public Dictionary<string, object?> Report { get; } = new() { ["id"] = request.Id, ["created"] = false, ["started"] = DateTimeOffset.UtcNow };
+    }
+
+    private static void RecordFailure(Dictionary<string, object?> report, Exception error)
+    {
+        report["error"] = error.Message;
+        report["errorType"] = error.GetType().FullName;
+        report["errorHResult"] = error.HResult;
+        if (error is Win32Exception native) report["nativeErrorCode"] = native.NativeErrorCode;
     }
 
     internal static object[] RunGroup(Request[] requests, Configuration config, CancellationToken cancel, ISessionBackend backend,
@@ -126,7 +135,7 @@ internal static class Runtime
                         catch (Exception error)
                         {
                             work.Report["success"] = false;
-                            work.Report["error"] = error.Message;
+                            RecordFailure(work.Report, error);
                             ready.TrySetException(error);
                             workers.Cancel();
                         }
@@ -154,7 +163,7 @@ internal static class Runtime
             foreach (var work in group)
             {
                 work.Report["success"] = false;
-                if (!work.Report.ContainsKey("error")) work.Report["error"] = error.Message;
+                if (!work.Report.ContainsKey("error")) RecordFailure(work.Report, error);
             }
         }
         finally
