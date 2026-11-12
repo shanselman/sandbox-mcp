@@ -206,6 +206,56 @@ checks under emulation; its read-only doctor still refuses unqualified native
 x64 execution. A successful x64 build is not evidence that the private
 credential ABI is valid on a native x64 Windows installation.
 
+## November 11: staged demo startup and helper completion
+
+A later live three-camera demo failed despite two helpers publishing all
+30 frames: the worker waited for helper-process exit under one 45-second
+deadline, and reported timeouts; the third stream produced no frames.
+No agent-attributed application crash was found. This did not prove that
+three sessions exceeded a Windows capacity limit, or identify the exact
+shutdown/runtime operation that stalled.
+
+The demo path now warms workers sequentially and accepts readiness only from
+the expected worker PID and agent SID through a broker-created local pipe.
+After all workers are ready, the broker releases capture together. Stream
+helpers emit numbered progress and explicit completion messages; process exit
+is then verified separately. Startup, barrier, capture and exit failures stay
+distinct, and neither a completion message nor existing PNGs can override an
+exit failure. Overdue capture schedule slots are skipped rather than replayed
+in a catch-up burst, and rendering/publication/schedule delays are measured.
+
+After an approved UAC update to package
+`69170944712605ED8A44A9B8809FD248BF62B548C8249CCFC12BEF6C4A7C004B`,
+one single-session control and one three-session grid passed:
+
+| Observation | Result |
+|---|---|
+| Grid PNGs | 90 valid images; all 30/member collected |
+| Common coverage | 28,983 ms |
+| Maximum interval, light / dark / enlarged dark | 1,003 / 1,006 / 1,042 ms |
+| Worker preparation | Each worker started after the previous worker reported ready |
+| Capture start | One shared release after all three readiness messages |
+| Helper completion/exit | All 30 progress messages received; each helper exited 0 after completion |
+| Live viewer | All three sequences advanced from 0 to 3 together; host palette present |
+| Application errors | Zero events attributed to the four provisioned agent identities |
+| Session/original-account cleanup | No test sessions or original accounts/profiles remained; broker pending queue empty |
+| Companion profiles | Four additional unloaded companion profiles remained, 187 -> 191; not falsely reported reclaimed |
+
+Actual WinUI pixels were inspected. The grid retained recorded-state labels
+after completion. The selected flexible timing policy was unchanged, and the
+observed maximum gaps also fit the previous strict 2-second bar.
+
+The candidate passed 108 broker checks (including staged preparation failure,
+missing progress and completion-with-exit-stall cases), 60 spike Node tests,
+112 repository tests and 13 package-validation tests. The broker tests were
+repeated; all 538 installed files matched their package hashes. An x64 package
+also built and file-verified, without claiming native x64 qualification.
+
+This establishes a working bounded demo under the new orchestration, not a
+statistical reliability/speedup claim or proof of the earlier timeout's OS
+root cause. Companion cleanup and the MXC graphical-lifecycle feature gap
+remain separate unresolved concerns.
+
 ## What happens when Windows updates today
 
 1. The broker checks required exports, supported architecture and the private

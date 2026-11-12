@@ -360,6 +360,26 @@ layouts/replay do not establish native capacity or make failed batches pass.
 
 ### Capture timing policy
 
+The coordinated installed-worker path now initializes workers sequentially.
+Each worker completes fixture readiness/UIA/before-after capture and warms its
+stream helper, then signals readiness through a broker-created local pipe
+restricted to that agent SID. The broker verifies the connecting worker PID
+and SID before accepting readiness. Only after every worker is ready does it
+release all streams. No client-supplied executable, output path or command is
+added to the privileged protocol.
+
+The stream helper sends separate readiness, numbered frame-progress and
+completion messages; the worker then verifies process exit. A completion
+message does not turn a nonzero exit or exit stall into success. Evidence
+includes `capture-ready.json`, `capture-started.json`, and `streamDiagnostics`
+in `worker.json`, so startup, barrier, capture and shutdown failures remain
+distinguishable. These are bounded lifecycle safeguards, separate from the
+selected timing-quality policy: startup 120 seconds per staged worker, active
+capture 90 seconds with a 30-second progress timeout, exit/drain 15 seconds.
+The whole broker request has a 540-second budget and the client allows
+660 seconds for the response and cleanup. Synchronous Windows create/stop
+calls are still not forcibly interrupted by these budgets.
+
 Select tolerances **before** starting a run. A policy JSON file accepts:
 
 ```json

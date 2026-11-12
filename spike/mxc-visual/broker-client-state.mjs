@@ -71,6 +71,7 @@ export function requireDeprovisionReceipt(record) {
 
 const evidenceFiles = [
   'worker.json', 'worker-started.json', 'job.json', 'authorization.json', 'fixture-settings.json', 'stream.json', 'live.json',
+  'capture-ready.json', 'capture-started.json',
   ...Array.from({ length: 30 }, (_, i) => `frame-${String(i).padStart(3, '0')}.png`),
   ...Array.from({ length: 30 }, (_, i) => `frame-meta-${String(i).padStart(3, '0')}.json`),
   ...['1-before', '2-after'].flatMap(label => ['screen', 'window-bitblt', 'printwindow-0', 'printwindow-2'].map(method => `${label}-${method}.png`)),

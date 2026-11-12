@@ -107,6 +107,23 @@ internal static class LifecycleTests
             Assert(backend.Owners.Count == 0 && backend.Stops.Count == 3, "Worker failure leaked a session");
             Assert(!results[1].GetProperty("report").GetProperty("success").GetBoolean(), "Failed worker marked successful");
         });
+        check("offline lifecycle: capture waits for every serialized worker preparation", () =>
+        {
+            var backend = new Fake();
+            var results = Run(backend);
+            Assert(backend.Prepared.SequenceEqual([10, 11, 12]), "Preparation order changed");
+            var release = results.Select(result => result.GetProperty("report").GetProperty("captureReleasedAt").GetDateTimeOffset()).Distinct().ToArray();
+            Assert(release.Length == 1, "Workers did not share one release");
+            Assert(results.All(result => result.GetProperty("report").GetProperty("workerReadyAt").GetDateTimeOffset() <= release[0]), "Capture preceded readiness");
+        });
+        check("offline lifecycle: failed preparation never releases capture or starts later workers", () =>
+        {
+            var backend = new Fake { PreparationFailure = 11 };
+            var results = Run(backend);
+            Assert(backend.Workers.Count == 2 && backend.Prepared.SequenceEqual([10]), "Work continued beyond failed preparation");
+            Assert(backend.Owners.Count == 0 && backend.Stops.Count == 3, "Preparation failure leaked sessions");
+            Assert(results.All(result => !result.GetProperty("report").TryGetProperty("captureReleasedAt", out _)), "Failure released capture");
+        });
         check("offline lifecycle: no worker under mismatched session identity", () =>
         {
             var backend = new Fake { Classifier = (id, _, owned) => id == 10 ? Native.Ownership.Other : owned };
@@ -233,13 +250,14 @@ internal static class LifecycleTests
         public ConcurrentBag<int> Workers { get; } = [];
         public int Creates, CredentialsCreated, CredentialsDisposed, Validations, DelayedMs;
         public int CredentialFailure = -1, CreateFailure = -1, StopFailure = -1, WorkerFailure = -1;
+        public int PreparationFailure = -1;
+        public List<int> Prepared { get; } = [];
         public int? ReturnId;
         public bool CreateBeforeThrow, RetainStopped, PlatformFailure;
         public Action<int>? AfterCreate;
         public Func<Lease, int, bool>? SaveFailure;
         public Func<int, Request, Native.Ownership, Native.Ownership>? Classifier;
         private int saves;
-        private readonly CountdownEvent startedWorkers = new(expectedWorkers);
         public DateTimeOffset Now { get; private set; } = DateTimeOffset.UnixEpoch;
         public uint ConsoleSessionId => 1;
         public void CheckPlatform() { if (PlatformFailure) throw new InvalidOperationException("Synthetic incompatible platform"); }
@@ -284,13 +302,18 @@ internal static class LifecycleTests
         }
         private sealed class Resource : IDisposable { public void Dispose() { } }
         public IDisposable AuthorizationProbe(string ownerSid) => new Resource();
-        public uint RunWorker(Lease lease, CancellationToken cancel)
+        public uint RunWorker(Lease lease, Action ready, ManualResetEventSlim captureStart, CancellationToken cancel)
         {
             Assert(Creates == expectedWorkers && Owners.Count == expectedWorkers, "Workers launched before coordinated creation");
             Assert(CredentialsCreated == CredentialsDisposed, "Credentials held during worker execution");
             Workers.Add(lease.SessionId!.Value);
-            startedWorkers.Signal();
-            if (!startedWorkers.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException("Test coordination failed");
+            int index = lease.SessionId.Value - 10;
+            Assert(Prepared.Count == index && !captureStart.IsSet, "Worker preparation was not serialized");
+            if (lease.SessionId == PreparationFailure) throw new IOException("Synthetic worker preparation failure");
+            Prepared.Add(lease.SessionId.Value);
+            ready();
+            captureStart.Wait(cancel);
+            Assert(Prepared.Count == expectedWorkers, "Capture began before all workers were ready");
             cancel.ThrowIfCancellationRequested();
             return lease.SessionId == WorkerFailure ? 1u : 0u;
         }

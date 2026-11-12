@@ -13,6 +13,8 @@ internal static class Program
             if (args is ["service"]) { Server.Dispatch(); return 0; }
             if (args is ["call"]) return Client.Call().GetAwaiter().GetResult();
             if (args is ["selftest"]) return SelfTest.Run();
+            if (args is ["selftest-stream-child", var mode] && mode is "complete" or "startup-error" or "missing-frame" or "exit-stall")
+                return StreamHelperTests.Child(mode);
             if (args is ["doctor"])
             {
                 var compatibility = Platform.Inspect();

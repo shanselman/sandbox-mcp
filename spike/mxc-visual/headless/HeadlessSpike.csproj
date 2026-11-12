@@ -6,4 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\CaptureRunLimits.cs" Link="CaptureRunLimits.cs" />
+    <Compile Include="..\StreamHelperRunner.cs" Link="StreamHelperRunner.cs" />
+  </ItemGroup>
 </Project>

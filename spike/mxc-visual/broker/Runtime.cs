@@ -85,23 +85,60 @@ internal static class Runtime
             }
             using var authorizationProbe = backend.AuthorizationProbe(config.OwnerSid);
             using var workers = CancellationTokenSource.CreateLinkedTokenSource(cancel);
-            Task.WaitAll(group.Select(work => Task.Run(() =>
+            using var captureStart = new ManualResetEventSlim();
+            var tasks = new List<Task>();
+            try
             {
-                try
+                foreach (var work in group)
                 {
-                    work.Report["workerStartedAt"] = DateTimeOffset.UtcNow;
-                    uint code = backend.RunWorker(work.Lease, workers.Token);
-                    work.Report["workerExitCode"] = code;
-                    work.Report["success"] = code == 0;
-                    if (code != 0) workers.Cancel();
+                    var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    tasks.Add(Task.Factory.StartNew(() =>
+                    {
+                        try
+                        {
+                            work.Report["workerStartedAt"] = DateTimeOffset.UtcNow;
+                            uint code = backend.RunWorker(work.Lease, () =>
+                            {
+                                work.Report["workerReadyAt"] = DateTimeOffset.UtcNow;
+                                ready.TrySetResult();
+                            }, captureStart, workers.Token);
+                            work.Report["workerExitCode"] = code;
+                            work.Report["success"] = code == 0;
+                            if (code != 0) workers.Cancel();
+                        }
+                        catch (Exception error)
+                        {
+                            work.Report["success"] = false;
+                            work.Report["error"] = error.Message;
+                            ready.TrySetException(error);
+                            workers.Cancel();
+                        }
+                        finally
+                        {
+                            ready.TrySetException(new IOException("Worker ended before readiness"));
+                            work.Report["workerFinishedAt"] = DateTimeOffset.UtcNow;
+                        }
+                    }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default));
+                    ready.Task.WaitAsync(TimeSpan.FromMilliseconds(CaptureRunLimits.StartupMs + 5000), workers.Token).GetAwaiter().GetResult();
                 }
-                catch (Exception error) { work.Report["success"] = false; work.Report["error"] = error.Message; workers.Cancel(); }
-                finally { work.Report["workerFinishedAt"] = DateTimeOffset.UtcNow; }
-            }, CancellationToken.None)).ToArray());
+                workers.Token.ThrowIfCancellationRequested();
+                DateTimeOffset released = DateTimeOffset.UtcNow;
+                foreach (var work in group) work.Report["captureReleasedAt"] = released;
+                captureStart.Set();
+            }
+            finally
+            {
+                if (!captureStart.IsSet) workers.Cancel();
+                Task.WaitAll(tasks.ToArray());
+            }
         }
         catch (Exception error)
         {
-            foreach (var work in group) { work.Report["success"] = false; work.Report["error"] = error.Message; }
+            foreach (var work in group)
+            {
+                work.Report["success"] = false;
+                if (!work.Report.ContainsKey("error")) work.Report["error"] = error.Message;
+            }
         }
         finally
         {

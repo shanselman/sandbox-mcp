@@ -147,14 +147,17 @@ internal static class Native
         return status;
     }
     internal static NamedPipeServerStream Pipe(string ownerSid, bool authorizationTest = false)
+        => PrivatePipe(Paths.PipeName + (authorizationTest ? ".authorization-test" : ""), ownerSid);
+
+    private static NamedPipeServerStream PrivatePipe(string name, string peerSid)
     {
-        if (!ConvertStringSecurityDescriptorToSecurityDescriptorW($"D:P(A;;GA;;;SY)(A;;GRGW;;;{ownerSid})", 1, out var descriptor, out _))
+        var sid = new SecurityIdentifier(peerSid);
+        if (!ConvertStringSecurityDescriptorToSecurityDescriptorW($"D:P(A;;GA;;;SY)(A;;GRGW;;;{sid.Value})", 1, out var descriptor, out _))
             throw Error("Create pipe security");
         try
         {
             var attributes = new SecurityAttributes { Size = Marshal.SizeOf<SecurityAttributes>(), Descriptor = descriptor };
             // First instance + overlapped; byte pipe, local clients only.
-            string name = Paths.PipeName + (authorizationTest ? ".authorization-test" : "");
             var handle = CreateNamedPipeW($@"\\.\pipe\{name}", 0x40080003, 8, 1, 65536, 16384, 5000, ref attributes);
             if (handle.IsInvalid) { handle.Dispose(); throw Error("Create exclusive local pipe"); }
             try { return new NamedPipeServerStream(PipeDirection.InOut, true, false, handle); }
@@ -207,21 +210,46 @@ internal static class Native
         }
         catch { token.Dispose(); throw; }
     }
-    internal static uint RunWorker(int sessionId, string sid, string key, string? variant, CancellationToken cancel)
+    internal static uint RunWorker(int sessionId, string sid, string key, string? variant,
+        Action ready, ManualResetEventSlim captureStart, CancellationToken cancel)
     {
         Protocol.RequireId(key);
         using var token = OwnedToken(sessionId, sid);
+        using var barrier = PrivatePipe("SandboxMcpFullBroker.Worker." + key, sid);
+        using var startup = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+        startup.CancelAfter(CaptureRunLimits.StartupMs);
+        var connected = barrier.WaitForConnectionAsync(startup.Token);
         string executable = Path.Combine(Paths.ReleaseRoot, "worker", "HeadlessSpike.exe");
         if (!CreateEnvironmentBlock(out var environment, token, false)) throw Error("Create agent environment");
         try
         {
-            var startup = new Startup { Size = (uint)Marshal.SizeOf<Startup>(), Desktop = @"winsta0\default" };
+            var startInfo = new Startup { Size = (uint)Marshal.SizeOf<Startup>(), Desktop = @"winsta0\default" };
             if (variant is not (null or "light" or "dark" or "dark-large")) throw new ArgumentException("Unsupported variant");
             var command = new StringBuilder($"\"{executable}\" installed-worker {sessionId} {key}" + (variant is null ? "" : $" {variant}"));
             if (!CreateProcessAsUserW(token, executable, command, IntPtr.Zero, IntPtr.Zero, false,
-                0x08000400, environment, Path.GetDirectoryName(executable)!, ref startup, out var info)) throw Error("Launch fixed agent worker");
+                0x08000400, environment, Path.GetDirectoryName(executable)!, ref startInfo, out var info)) throw Error("Launch fixed agent worker");
             using var process = new SafeProcessHandle(info.Process, true);
             using var thread = new SafeWaitHandle(info.Thread, true);
+            while (!connected.IsCompleted)
+            {
+                startup.Token.ThrowIfCancellationRequested();
+                uint wait = WaitForSingleObject(process, 250);
+                if (wait == 0) throw new IOException("Worker exited during staged initialization");
+                if (wait == uint.MaxValue) throw Error("Wait for worker readiness");
+            }
+            connected.GetAwaiter().GetResult();
+            if (!GetNamedPipeClientProcessId(barrier.SafePipeHandle, out uint peer) || peer != info.Pid)
+                throw new UnauthorizedAccessException("Unexpected worker readiness peer");
+            byte[] signal = new byte[1];
+            barrier.ReadExactlyAsync(signal, startup.Token).AsTask().GetAwaiter().GetResult();
+            string? actualSid = null;
+            barrier.RunAsClient(() => { using var identity = WindowsIdentity.GetCurrent(true); actualSid = identity?.User?.Value; });
+            if (signal[0] != (byte)'R' || actualSid != sid)
+                throw new UnauthorizedAccessException("Invalid worker readiness identity or message");
+            ready();
+            captureStart.Wait(cancel);
+            barrier.Write(new byte[] { (byte)'G' });
+            barrier.Flush();
             while (true)
             {
                 cancel.ThrowIfCancellationRequested();
@@ -232,6 +260,10 @@ internal static class Native
             }
             if (!GetExitCodeProcess(process, out uint code)) throw Error("Read worker exit code");
             return code;
+        }
+        catch (OperationCanceledException) when (startup.IsCancellationRequested && !cancel.IsCancellationRequested)
+        {
+            throw new TimeoutException("Worker staged initialization/readiness deadline expired");
         }
         finally
         {

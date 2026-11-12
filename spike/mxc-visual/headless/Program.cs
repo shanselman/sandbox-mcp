@@ -71,7 +71,8 @@ internal static class Program
         public int State;
     }
 
-    internal sealed record Job(string Output, string App, string Helper, int? ExpectedSessionId = null, string? Variant = null);
+    internal sealed record Job(string Output, string App, string Helper, int? ExpectedSessionId = null, string? Variant = null,
+        string? CoordinationKey = null);
     private sealed record HelperResult(int ExitCode, string Stdout, string Stderr);
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
@@ -165,7 +166,7 @@ internal static class Program
             JsonSerializer.Serialize(new { sessionId = expectedSession, nonOwnerPipeAccessDenied = denied }, JsonOptions));
         if (!denied) throw new UnauthorizedAccessException("The agent could reach the owner-only authorization-test pipe");
         var job = new Job(output, Path.Combine(release, "fixture", "HelloWinUI.exe"),
-            Path.Combine(release, "helper", "CaptureHelper.exe"), expectedSession, variant);
+            Path.Combine(release, "helper", "CaptureHelper.exe"), expectedSession, variant, outputKey);
         string path = Path.Combine(output, "job.json");
         File.WriteAllText(path, JsonSerializer.Serialize(job, JsonOptions));
         return Worker(path);
@@ -412,8 +413,8 @@ internal static class Program
         if (!process.WaitForExit(timeout))
         {
             process.Kill(entireProcessTree: true);
-            process.WaitForExit();
-            throw new TimeoutException($"Owned helper exceeded {timeout} milliseconds");
+            bool exited = process.WaitForExit(CaptureRunLimits.ExitMs);
+            throw new TimeoutException($"Owned helper {arguments.FirstOrDefault()} exceeded {timeout} milliseconds; termination confirmed={exited}");
         }
         return new(process.ExitCode, stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
     }
@@ -464,9 +465,51 @@ internal static class Program
                 throw new InvalidOperationException("One or more helper operations failed; see recorded output");
             if (job.Variant is not null)
             {
-                var stream = Helper(job, "stream", "--pid", app.Id.ToString(), "--out", job.Output);
+                HelperResult stream;
+                if (job.CoordinationKey is not null)
+                {
+                    var diagnostics = new Dictionary<string, object?>();
+                    report["streamDiagnostics"] = diagnostics;
+                    var startStream = new ProcessStartInfo(job.Helper);
+                    foreach (string argument in new[] { "stream", "--pid", app.Id.ToString(), "--out", job.Output, "--coordinated", "true" })
+                        startStream.ArgumentList.Add(argument);
+                    var observed = StreamHelperRunner.Run(startStream, async cancel =>
+                    {
+                        File.WriteAllText(Path.Combine(job.Output, "capture-ready.json"), JsonSerializer.Serialize(new
+                        {
+                            at = DateTimeOffset.UtcNow, sessionId = Process.GetCurrentProcess().SessionId,
+                            workerPid = Environment.ProcessId, helperPid = diagnostics["helperPid"]
+                        }, JsonOptions));
+                        using var barrier = new NamedPipeClientStream(".", "SandboxMcpFullBroker.Worker." + job.CoordinationKey,
+                            PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Impersonation);
+                        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+                        deadline.CancelAfter(CaptureRunLimits.BarrierMs);
+                        await barrier.ConnectAsync(10000, deadline.Token);
+                        await barrier.WriteAsync(new byte[] { (byte)'R' }, deadline.Token);
+                        await barrier.FlushAsync(deadline.Token);
+                        byte[] signal = new byte[1];
+                        await barrier.ReadExactlyAsync(signal, deadline.Token);
+                        if (signal[0] != (byte)'G') throw new InvalidDataException("Invalid capture start signal");
+                        File.WriteAllText(Path.Combine(job.Output, "capture-started.json"), JsonSerializer.Serialize(new
+                        {
+                            at = DateTimeOffset.UtcNow, sessionId = Process.GetCurrentProcess().SessionId,
+                            workerPid = Environment.ProcessId
+                        }, JsonOptions));
+                    }, diagnostics, CancellationToken.None).GetAwaiter().GetResult();
+                    stream = new HelperResult(observed.ExitCode, observed.Stdout, observed.Stderr);
+                }
+                else stream = Helper(job, "stream", "--pid", app.Id.ToString(), "--out", job.Output);
                 report["stream"] = stream;
                 if (stream.ExitCode != 0) throw new InvalidOperationException("Bounded screenshot stream failed");
+            }
+            else if (job.CoordinationKey is not null)
+            {
+                // Baseline has no stream but still participates in staged-worker completion.
+                using var barrier = new NamedPipeClientStream(".", "SandboxMcpFullBroker.Worker." + job.CoordinationKey,
+                    PipeDirection.InOut, PipeOptions.None, TokenImpersonationLevel.Impersonation);
+                barrier.Connect(10000);
+                barrier.WriteByte((byte)'R');
+                if (barrier.ReadByte() != 'G') throw new InvalidDataException("Invalid baseline completion signal");
             }
         }
         catch (Exception error) { report["error"] = error.ToString(); }

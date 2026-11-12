@@ -20,7 +20,7 @@ internal interface ISessionBackend
     Native.Ownership Classify(int sessionId, Request request);
     void Save(Lease lease);
     IDisposable AuthorizationProbe(string ownerSid);
-    uint RunWorker(Lease lease, CancellationToken cancel);
+    uint RunWorker(Lease lease, Action ready, ManualResetEventSlim captureStart, CancellationToken cancel);
     void StopSession(int sessionId);
     void Delay(int milliseconds);
 }
@@ -81,8 +81,8 @@ internal sealed class WindowsSessionBackend : ISessionBackend
         Native.ClassifySession(sessionId, request.AgentName!, request.AgentSid!);
     public void Save(Lease lease) => Paths.SaveLease(lease);
     public IDisposable AuthorizationProbe(string ownerSid) => Native.Pipe(ownerSid, true);
-    public uint RunWorker(Lease lease, CancellationToken cancel) =>
-        Native.RunWorker(lease.SessionId!.Value, lease.Request.AgentSid!, lease.OutputKey, lease.Request.Variant, cancel);
+    public uint RunWorker(Lease lease, Action ready, ManualResetEventSlim captureStart, CancellationToken cancel) =>
+        Native.RunWorker(lease.SessionId!.Value, lease.Request.AgentSid!, lease.OutputKey, lease.Request.Variant, ready, captureStart, cancel);
     public void StopSession(int sessionId)
     {
         if (!Native.EXPERIMENTAL_WTSStopHeadlessSession(sessionId)) throw Native.Error("Stop owned Full session");

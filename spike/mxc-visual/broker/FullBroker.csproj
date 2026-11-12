@@ -11,5 +11,7 @@
     <Compile Include="..\headless\LocalAgentCredential.cs" Link="LocalAgentCredential.cs" />
     <Compile Include="..\EvidencePublication.cs" Link="EvidencePublication.cs" />
     <Compile Include="..\CaptureSchedule.cs" Link="CaptureSchedule.cs" />
+    <Compile Include="..\CaptureRunLimits.cs" Link="CaptureRunLimits.cs" />
+    <Compile Include="..\StreamHelperRunner.cs" Link="StreamHelperRunner.cs" />
   </ItemGroup>
 </Project>

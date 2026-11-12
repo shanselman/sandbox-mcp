@@ -16,6 +16,7 @@ internal static class SelfTest
             try { test(); passed++; }
             catch (Exception error) { failures.Add($"{name}: {error.Message}"); }
         }
+        StreamHelperTests.Register(Check);
         static void Reject(Action operation)
         {
             try { operation(); }

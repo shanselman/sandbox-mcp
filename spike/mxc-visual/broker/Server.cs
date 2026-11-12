@@ -105,7 +105,7 @@ internal static class Server
                 {
                     if (recoveryError is not null) throw new InvalidOperationException("Broker recovery/build check is required: " + recoveryError);
                     using var run = CancellationTokenSource.CreateLinkedTokenSource(stopping);
-                    run.CancelAfter(TimeSpan.FromSeconds(150));
+                    run.CancelAfter(TimeSpan.FromMilliseconds(CaptureRunLimits.RunMs));
                     using var monitorStop = CancellationTokenSource.CreateLinkedTokenSource(stopping);
                     var monitor = MonitorDisconnect(pipe, run, monitorStop.Token);
                     try { response = await Task.Run(() => Runtime.Run(request, config, run.Token), CancellationToken.None); }

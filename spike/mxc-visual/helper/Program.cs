@@ -43,7 +43,12 @@ static class Program
             }
         }
         catch (Exception e) { report["error"] = e.ToString(); }
-        Console.WriteLine(JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+        if (opts.GetValueOrDefault("coordinated") == "true")
+        {
+            Console.WriteLine(JsonSerializer.Serialize(new { phase = report.ContainsKey("error") ? "error" : "complete", report }));
+            Console.Out.Flush();
+        }
+        else Console.WriteLine(JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
         return report.ContainsKey("error") ? 1 : 0;
     }
 
@@ -166,6 +171,24 @@ static class Program
         string output = options["out"];
         var hwnd = MainWindow(pid, 10000);
         if (hwnd == IntPtr.Zero) throw new InvalidOperationException("No visible target window");
+        bool coordinated = options.GetValueOrDefault("coordinated") == "true";
+        if (coordinated)
+        {
+            if (!GetWindowRect(hwnd, out var warmRect)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            int width = warmRect.R - warmRect.L, height = warmRect.B - warmRect.T;
+            if (width <= 0 || height <= 0 || (long)width * height > 16000000) throw new InvalidOperationException("Invalid warm-up capture dimensions");
+            using (var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb))
+            using (var graphics = Graphics.FromImage(bitmap))
+            {
+                var dc = graphics.GetHdc();
+                try { if (!PrintWindow(hwnd, dc, 2)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Warm-up PrintWindow"); }
+                finally { graphics.ReleaseHdc(dc); }
+            }
+            Console.WriteLine("""{"phase":"ready"}""");
+            Console.Out.Flush();
+            string? command = Console.In.ReadLineAsync().WaitAsync(TimeSpan.FromMilliseconds(CaptureRunLimits.BarrierMs)).GetAwaiter().GetResult();
+            if (command != "GO") throw new InvalidDataException("Expected coordinated capture start");
+        }
         var frames = new List<object>();
         var timer = Stopwatch.StartNew();
         long scheduledMs = 0;
@@ -203,6 +226,11 @@ static class Program
                     sessionId = target.SessionId, pid, width, height, actualWindowDpi = GetDpiForWindow(hwnd), error = (string?)null };
                 frames.Add(frame);
                 WriteLive(output, sequence, frame);
+                if (coordinated)
+                {
+                    Console.WriteLine(JsonSerializer.Serialize(new { phase = "frame", sequence }));
+                    Console.Out.Flush();
+                }
             }
             catch (Exception error)
             {
