@@ -44,7 +44,7 @@ internal static class Client
         }
         var request = Protocol.Parse(data.ToArray());
         using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(
-            request.Operation is "run-fixture" or "run-grid" ? CaptureRunLimits.ResponseMs : 220000));
+            request.Operation is "run-fixture" or "run-grid" ? CaptureRunLimits.ResponseForMembers(request.Members?.Length ?? 1) : 220000));
         using var pipe = new NamedPipeClientStream(".", Paths.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous,
             TokenImpersonationLevel.Identification);
         await pipe.ConnectAsync(5000, deadline.Token);

@@ -20,6 +20,20 @@ test('cadence is measured and fixture scaling is not presented as monitor DPI', 
   assert.equal(result.actualWindowDpi, 96);
   assert.equal(result.scaleIsSimulation, true);
 });
+test('Calculator verdict requires every scenario-specific UIA result without inventing measured theme or scale', () => {
+  const settings = { variant: 'calculator-16', workload: 'calculator', application: 'Microsoft.WindowsCalculator',
+    theme: 'System (unmeasured)', actualWindowDpi: 96, rasterizationScale: null,
+    fixtureLayoutScale: 1, dpiWasChanged: false, scaleIsSimulation: false };
+  const data = { ...stream(), workload: 'calculator',
+    automationChecks: [49, 108, 100].map(value => ({ expected: value, actual: value, passed: true })) };
+  assert.equal(summarizeStream(data, settings, settings.variant).automationChecks.length, 3);
+  data.automationChecks[1].actual = 99;
+  assert.throws(() => summarizeStream(data, settings, settings.variant), /arithmetic assertions/);
+  data.automationChecks[1].actual = 108;
+  data.automationChecks.pop();
+  assert.throws(() => summarizeStream(data, settings, settings.variant), /arithmetic assertions/);
+  assert.throws(() => summarizeStream(data, { ...settings, theme: 'Dark' }, settings.variant), /settings/);
+});
 test('slow cadence is a failed threshold, not a cosmetic 1fps label', () => {
   const data = stream();
   for (const frame of data.frames) frame.elapsedMs *= 1.2;

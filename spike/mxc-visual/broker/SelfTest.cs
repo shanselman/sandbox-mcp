@@ -90,6 +90,47 @@ internal static class SelfTest
             Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "run-grid", Members: [members[0], members[1], members[2] with { Variant = "light" }]), Protocol.Json))));
         Check("nested duplicate JSON property rejected", () => Reject(() =>
             Parse("""{"protocol":1,"operation":"run-grid","members":[{"id":"a","id":"b"}]}""")));
+        foreach (int count in new[] { 1, 3, 4, 8, 16 })
+            Check($"bounded Calculator grid {count}", () =>
+            {
+                var calculators = Enumerable.Range(1, count).Select(index =>
+                    new GridMember(index.ToString("x32"), $"A{index}-B{index}", $"S-1-5-21-1-2-3-{1001 + index}",
+                        new string('x', 4096), $"calculator-{index:D2}")).ToArray();
+                Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "run-grid", Members: calculators), Protocol.Json));
+            });
+        foreach (string variant in new[] { "calculator-00", "calculator-17", "calculator-1", "calculator-01 & calc.exe" })
+            Check("reject unsupported Calculator workload " + variant, () => Reject(() =>
+                Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(members[0].AsRequest() with { Variant = variant }, Protocol.Json))));
+        Check("seventeenth grid member refused before native work", () => Reject(() =>
+            Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "run-grid",
+                Members: Enumerable.Repeat(members[0], 17).ToArray()), Protocol.Json))));
+        Check("Calculator plans finish three independently correct arithmetic operations within capture", () =>
+        {
+            for (int index = 1; index <= VisualWorkloads.MaxSessions; index++)
+            {
+                var steps = VisualWorkloads.CalculatorSteps(index);
+                if (steps.Length > 30) throw new Exception("Plan exceeds captured frames");
+                int current = 0, left = 0, assertions = 0;
+                string operation = "";
+                foreach (var step in steps)
+                {
+                    if (step.Button == "clearButton") { current = left = 0; operation = ""; }
+                    else if (step.Button.StartsWith("num") && step.Button.Length == 10 && char.IsAsciiDigit(step.Button[3]))
+                        current = current * 10 + step.Button[3] - '0';
+                    else if (step.Button is "plusButton" or "minusButton" or "multiplyButton")
+                    { left = current; current = 0; operation = step.Button; }
+                    else if (step.Button == "equalButton")
+                    {
+                        current = operation switch { "plusButton" => left + current, "minusButton" => left - current,
+                            "multiplyButton" => left * current, _ => throw new Exception("No operation") };
+                        if (step.Expected != current) throw new Exception("Incorrect expected result");
+                        assertions++;
+                    }
+                    else throw new Exception("Unexpected Calculator button");
+                }
+                if (assertions != 3) throw new Exception("Missing Calculator assertions");
+            }
+        });
         foreach (string input in new[] { @"..\broker\evil.exe", @"broker\..\evil.exe", @"C:\broker\evil.exe", @"broker\file:stream", @"broker\CON", @"broker\file.", @"broker\file ", @"broker\\file", "broker/file", @"unknown\file" })
             Check("reject package path " + input, () => Reject(() => Installer.ValidateRelativePath(input)));
         Check("valid package path", () => Installer.ValidateRelativePath(@"fixture\Assets\Logo.png"));

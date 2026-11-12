@@ -13,5 +13,6 @@
     <Compile Include="..\EvidencePublication.cs" Link="EvidencePublication.cs" />
     <Compile Include="..\CaptureSchedule.cs" Link="CaptureSchedule.cs" />
     <Compile Include="..\CaptureRunLimits.cs" Link="CaptureRunLimits.cs" />
+    <Compile Include="..\VisualWorkloads.cs" Link="VisualWorkloads.cs" />
   </ItemGroup>
 </Project>

@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { atomicJson } from './broker-client-state.mjs';
 import { validateFrame, validatePng } from './live-evidence.mjs';
+import { isVariant } from './visual-workloads.mjs';
 
 const execute = promisify(execFile);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -89,7 +90,7 @@ export async function encodeRecording(directory, suppliedFrames) {
 export function cameraRecordings(root) {
   const entries = new Map();
   return (run, progress, batch) => {
-    if (!['light', 'dark', 'dark-large'].includes(run.variant)) throw new Error('Unexpected recording variant');
+    if (!isVariant(run.variant)) throw new Error('Unexpected recording variant');
     const finished = batch.mode === 'replay' || Boolean(batch.completedAt)
       || ['passed', 'failed', 'skipped'].includes(run.state) || ['complete', 'failed'].includes(progress?.state);
     if (!finished || run.state === 'skipped') return null;

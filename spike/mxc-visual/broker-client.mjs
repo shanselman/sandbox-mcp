@@ -11,6 +11,7 @@ import { atomicJson, readRecord, mergePending, copyEvidence, verifyVisualEvidenc
 import { startLiveCollector, requireFreshLiveOutput, readBatch } from './live-evidence.mjs';
 import { verifyStreamEvidence } from './stream-evidence.mjs';
 import { capturePolicy, policyArguments, LEGACY_CAPTURE_POLICY } from './capture-policy.mjs';
+import { isVariant, batchVariants } from './visual-workloads.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const options = policyArguments(process.argv.slice(2));
@@ -21,7 +22,7 @@ const gridOutput = operation === 'run-grid' && options.args[1] ? path.resolve(op
 if (!['status', 'run-fixture', 'run-grid', 'recover'].includes(operation)
   || options.args.length > 3 || operation === 'run-grid' && (!gridOutput || liveOutput)
   || ['status', 'recover'].includes(operation) && options.args.length > 1
-  || variant && !['light', 'dark', 'dark-large'].includes(variant)
+  || variant && !isVariant(variant)
   || options.explicit && (operation !== 'run-fixture' || !variant))
   throw new Error('Expected status, recover, run-grid <prepared-directory>, or run-fixture [light|dark|dark-large] [live-output-directory] [--policy <JSON-file>]');
 const preparedBatch = operation === 'run-grid' ? readBatch(gridOutput) : null;
@@ -145,8 +146,8 @@ async function withClientLock(action) {
 }
 
 async function runGrid(root, status) {
-  const variants = ['light', 'dark', 'dark-large'];
-  if (status.maxCoordinatedSessions !== 3 || variants.some(variant => !status.variants?.includes(variant)))
+  const variants = batchVariants(preparedBatch);
+  if (status.maxCoordinatedSessions < variants.length || variants.some(variant => !status.variants?.includes(variant)))
     throw new Error('Update the installed broker before provisioning a coordinated grid');
   for (const variant of variants) requireFreshLiveOutput(path.join(root, variant));
   const records = [], collectors = [], progress = [];
@@ -173,7 +174,7 @@ async function runGrid(root, status) {
       id: record.id, agentName: record.metadata.agentUserName, agentSid: record.metadata.agentUserSid,
       containerId: record.containerId, variant: record.variant,
     })) });
-    if (!Array.isArray(response.results) || response.results.length !== 3) throw new Error('Grid did not return three member results');
+    if (!Array.isArray(response.results) || response.results.length !== variants.length) throw new Error('Grid did not return every member result');
     for (const record of records) {
       const result = response.results.find(result => result.report?.id === record.id);
       if (!result) throw new Error('Grid result identities do not match provisioned members');
@@ -194,7 +195,7 @@ async function runGrid(root, status) {
     throw error;
   }
   const runs = [];
-  if (response?.results?.length === 3) for (const record of records) {
+  if (response?.results?.length === variants.length) for (const record of records) {
     const result = response.results.find(result => result.report.id === record.id);
     if (result?.report.success !== true) continue;
     const directory = path.join(here, 'evidence', `broker-${record.id}`, 'visual');
@@ -210,11 +211,11 @@ async function runGrid(root, status) {
   const sessionIds = runs.map(run => run.response.report.sessionId);
   if (!failure && runs.some(run => run.observedFrames !== 30))
     failure = new Error('Live collector did not preserve all 30 frames for every member');
-  const overlapMs = runs.length === 3 ? Math.min(...runs.map(run => Date.parse(run.lastFrameAt)))
+  const overlapMs = runs.length === variants.length ? Math.min(...runs.map(run => Date.parse(run.lastFrameAt)))
     - Math.max(...runs.map(run => Date.parse(run.firstFrameAt))) : 0;
-  if (!failure && (new Set(sessionIds).size !== 3 || overlapMs < policy.minOverlapMs
+  if (!failure && (new Set(sessionIds).size !== variants.length || overlapMs < policy.minOverlapMs
     || runs.some(run => !run.response.report.allSessionsPresentAtWorkerLaunch || !run.cleanup?.accountRemoved)))
-    failure = new Error('Three-session overlap or cleanup proof failed');
+    failure = new Error('Coordinated session overlap or cleanup proof failed');
   console.log(JSON.stringify({ ok: !failure, capturePolicy: policy, runs, overlapMs, cleanup, ...(failure ? { error: failure.message } : {}) }, null, 2));
   if (failure) throw failure;
 }

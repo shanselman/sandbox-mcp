@@ -11,12 +11,14 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Windows.Automation;
 
 static class Program
 {
     static int Main(string[] args)
     {
+        if (args is ["calculator-readiness-selftest"]) return CalculatorReadinessTests.Run();
         var opts = ParseArgs(args.Skip(1).ToArray());
         var report = new Dictionary<string, object?>
         {
@@ -39,6 +41,8 @@ static class Program
                 case "capture": Capture(opts, report); break;
                 case "uia": Uia(opts, report); break;
                 case "stream": Stream(opts, report); break;
+                case "calculator-ready": CalculatorReady(opts, report); break;
+                case "calculator-probe": CalculatorProbe(opts, report); break;
                 default: report["error"] = "unknown verb"; break;
             }
         }
@@ -172,6 +176,10 @@ static class Program
         var hwnd = MainWindow(pid, 10000);
         if (hwnd == IntPtr.Zero) throw new InvalidOperationException("No visible target window");
         bool coordinated = options.GetValueOrDefault("coordinated") == "true";
+        int calculator = VisualWorkloads.CalculatorNumber(options.GetValueOrDefault("variant"));
+        var steps = calculator > 0 ? VisualWorkloads.CalculatorSteps(calculator) : [];
+        var calculatorRoot = calculator > 0 ? CalculatorRoot(pid, report) : null;
+        var automationChecks = new List<object>();
         if (coordinated)
         {
             if (!GetWindowRect(hwnd, out var warmRect)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
@@ -203,6 +211,12 @@ static class Program
             string name = $"frame-{sequence:D3}.png";
             try
             {
+                object? automation = null;
+                if (calculatorRoot is not null && sequence < steps.Length)
+                {
+                    automation = CalculatorStep(calculatorRoot, steps[sequence]);
+                    if (steps[sequence].Expected is not null) automationChecks.Add(automation);
+                }
                 GetWindowRect(hwnd, out var rect);
                 int width = rect.R - rect.L, height = rect.B - rect.T;
                 if (width <= 0 || height <= 0 || (long)width * height > 16000000)
@@ -223,7 +237,7 @@ static class Program
                 var frame = new { sequence, at = DateTimeOffset.UtcNow, elapsedMs = completed,
                     captureMs = completed - start, renderMs, publicationMs = completed - publicationStarted,
                     scheduleDelayMs = Math.Max(0, start - scheduledMs), scheduledMs, file = name,
-                    sessionId = target.SessionId, pid, width, height, actualWindowDpi = GetDpiForWindow(hwnd), error = (string?)null };
+                    sessionId = target.SessionId, pid, width, height, actualWindowDpi = GetDpiForWindow(hwnd), automation, error = (string?)null };
                 frames.Add(frame);
                 WriteLive(output, sequence, frame);
                 if (coordinated)
@@ -246,9 +260,103 @@ static class Program
         report["targetFps"] = 1;
         report["schedule"] = "skip-overdue-slots";
         report["failedFrames"] = failures;
+        if (calculator > 0)
+        {
+            report["workload"] = "calculator";
+            report["automationChecks"] = automationChecks;
+            if (automationChecks.Count != 3) failures++;
+        }
         EvidencePublication.PublishNew(Path.Combine(output, "stream.json"),
             stream => JsonSerializer.Serialize(stream, report, new JsonSerializerOptions { WriteIndented = true }));
         if (failures != 0) throw new InvalidOperationException($"{failures} capture frames failed");
+    }
+
+    static AutomationElement CalculatorRoot(int pid, Dictionary<string, object?> report)
+    {
+        using var target = Process.GetProcessById(pid);
+        if (target.SessionId != Process.GetCurrentProcess().SessionId)
+            throw new UnauthorizedAccessException("Calculator is outside the helper session");
+        AutomationElement? found = null;
+        var diagnostics = new Dictionary<string, object?>();
+        report["calculatorReadiness"] = diagnostics;
+        WaitForCalculator(() =>
+        {
+            if (target.HasExited) throw new InvalidOperationException("Calculator exited before UI Automation became ready");
+            var hwnd = MainWindow(pid, 1000);
+            diagnostics["lastWindow"] = $"0x{hwnd:X}";
+            if (hwnd != IntPtr.Zero)
+            {
+                var root = AutomationElement.FromHandle(hwnd);
+                if (root.FindFirst(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.AutomationIdProperty, "CalculatorResults")) is not null)
+                { found = root; return true; }
+            }
+            return false;
+        }, diagnostics);
+        return found ?? throw new InvalidOperationException("Calculator readiness did not return an element");
+    }
+
+    internal static void WaitForCalculator(Func<bool> probe, Dictionary<string, object?> diagnostics, int timeoutMs = 20000, int pollMs = 200)
+    {
+        var timer = Stopwatch.StartNew();
+        int attempts = 0, transientErrors = 0;
+        while (timer.ElapsedMilliseconds < timeoutMs)
+        {
+            diagnostics["readinessAttempts"] = ++attempts;
+            try { if (probe()) return; }
+            catch (ElementNotAvailableException error)
+            {
+                diagnostics["readinessTransientErrors"] = ++transientErrors;
+                diagnostics["lastReadinessError"] = error.ToString();
+            }
+            Thread.Sleep(pollMs);
+        }
+        throw new TimeoutException("Calculator UI Automation results element did not become ready: " + JsonSerializer.Serialize(diagnostics));
+    }
+
+    static object CalculatorStep(AutomationElement root, VisualWorkloads.Step step)
+    {
+        AutomationElement Find(string id) => root.FindFirst(TreeScope.Descendants,
+            new PropertyCondition(AutomationElement.AutomationIdProperty, id))
+            ?? throw new InvalidOperationException($"Calculator element {id} is missing");
+        ((InvokePattern)Find(step.Button).GetCurrentPattern(InvokePattern.Pattern)).Invoke();
+        Thread.Sleep(150);
+        string display = Find("CalculatorResults").Current.Name;
+        int? actual = null;
+        if (step.Expected is not null)
+        {
+            if (!int.TryParse(Regex.Replace(display, "[^0-9-]", ""), out int value) || value != step.Expected)
+                throw new InvalidOperationException($"Calculator expected {step.Expected}, observed '{display}'");
+            actual = value;
+        }
+        return new { button = step.Button, expected = step.Expected, actual, display, passed = true };
+    }
+
+    static void CalculatorReady(Dictionary<string, string> options, Dictionary<string, object?> report)
+    {
+        int pid = ResolvePid(options);
+        string variant = options["variant"];
+        if (VisualWorkloads.CalculatorNumber(variant) == 0) throw new ArgumentException("Invalid Calculator variant");
+        var root = CalculatorRoot(pid, report);
+        report["clear"] = CalculatorStep(root, new("clearButton", 0));
+        report["pid"] = pid;
+        report["calculatorReady"] = true;
+        var settings = new { variant, workload = "calculator", application = "Microsoft.WindowsCalculator",
+            theme = "System (unmeasured)", actualWindowDpi = GetDpiForWindow(MainWindow(pid, 1000)),
+            rasterizationScale = (double?)null, fixtureLayoutScale = 1, dpiWasChanged = false, scaleIsSimulation = false };
+        EvidencePublication.PublishNew(Path.Combine(options["out"], "fixture-settings.json"),
+            stream => JsonSerializer.Serialize(stream, settings));
+    }
+
+    static void CalculatorProbe(Dictionary<string, string> options, Dictionary<string, object?> report)
+    {
+        int pid = ResolvePid(options);
+        var root = CalculatorRoot(pid, report);
+        foreach (string button in new[] { "clearButton", "num7Button", "plusButton", "num8Button" })
+            CalculatorStep(root, new(button));
+        report["assertion"] = CalculatorStep(root, new("equalButton", 15));
+        report["pid"] = pid;
+        report["calculatorVerified"] = true;
     }
 
     static void WriteLive(string output, int sequence, object frame)

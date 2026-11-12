@@ -19,7 +19,7 @@ internal sealed record Lease(Request Request, string OutputKey, int[] Baseline,
 
 internal static class Protocol
 {
-    public const int RequestLimit = 16384, ResponseLimit = 65536;
+    public const int RequestLimit = 131072, ResponseLimit = 262144;
     public static readonly JsonSerializerOptions Json = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -52,22 +52,26 @@ internal static class Protocol
             throw new InvalidDataException("Unexpected operation field");
         if (request.Operation == "run-grid")
         {
-            if (request.Members is not { Length: 3 }) throw new InvalidDataException("Grid requires exactly three fixed variants");
+            if (request.Members is not { Length: >= 1 and <= VisualWorkloads.MaxSessions })
+                throw new InvalidDataException("Grid requires one to sixteen fixed workloads");
             foreach (var member in request.Members)
             {
                 if (member is null) throw new InvalidDataException("Missing grid member");
                 Parse(JsonSerializer.SerializeToUtf8Bytes(member.AsRequest(), Json));
             }
-            if (request.Members.Select(member => member.Id).Distinct().Count() != 3
-                || request.Members.Select(member => member.AgentSid).Distinct().Count() != 3
-                || request.Members.Select(member => member.AgentName).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 3
-                || !request.Members.Select(member => member.Variant).ToHashSet().SetEquals(["light", "dark", "dark-large"]))
+            int count = request.Members.Length;
+            bool calculatorGrid = request.Members.All(member => VisualWorkloads.CalculatorNumber(member.Variant) > 0);
+            if (request.Members.Select(member => member.Id).Distinct().Count() != count
+                || request.Members.Select(member => member.AgentSid).Distinct().Count() != count
+                || request.Members.Select(member => member.AgentName).Distinct(StringComparer.OrdinalIgnoreCase).Count() != count
+                || request.Members.Select(member => member.Variant).Distinct().Count() != count
+                || !calculatorGrid && !request.Members.Select(member => member.Variant).ToHashSet().SetEquals(["light", "dark", "dark-large"]))
                 throw new InvalidDataException("Grid member identities and variants must be unique");
         }
         if (request.Operation is "run-fixture" or "result" or "ack") RequireId(request.Id);
         if (request.Operation == "run-fixture")
         {
-            if (request.Variant is not (null or "light" or "dark" or "dark-large"))
+            if (!VisualWorkloads.IsAllowed(request.Variant))
                 throw new InvalidDataException("Unsupported fixed fixture variant");
             if (request.AgentName is null || !Regex.IsMatch(request.AgentName, "^[A-Za-z0-9][A-Za-z0-9-]{0,31}$"))
                 throw new InvalidDataException("Invalid agent name");

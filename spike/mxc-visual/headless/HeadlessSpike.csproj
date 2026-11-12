@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\CaptureRunLimits.cs" Link="CaptureRunLimits.cs" />
+    <Compile Include="..\VisualWorkloads.cs" Link="VisualWorkloads.cs" />
     <Compile Include="..\StreamHelperRunner.cs" Link="StreamHelperRunner.cs" />
   </ItemGroup>
 </Project>

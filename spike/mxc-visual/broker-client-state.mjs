@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { validatePng } from './png-evidence.mjs';
+import { calculatorIndex } from './visual-workloads.mjs';
 
 export function requireId(id) {
   if (typeof id !== 'string' || !/^[a-f0-9]{32}$/.test(id)) throw new Error('Invalid request ID');
@@ -103,11 +104,14 @@ export function copyEvidence(workspace, key, destination) {
 export function verifyVisualEvidence(directory, sessionId, agentName) {
   const worker = JSON.parse(fs.readFileSync(path.join(directory, 'worker.json'), 'utf8'));
   const authorization = JSON.parse(fs.readFileSync(path.join(directory, 'authorization.json'), 'utf8'));
-  if (worker.sessionId !== sessionId || worker.user !== agentName || worker.error
+  if (worker.sessionId !== sessionId || worker.user !== agentName || worker.error || worker.appCleanupError
     || authorization.sessionId !== sessionId || authorization.nonOwnerPipeAccessDenied !== true)
     throw new Error('Worker identity, authorization boundary, or execution did not validate');
   const uia = JSON.parse(worker.uia.Stdout);
-  if (worker.uia.ExitCode !== 0 || !uia.after?.includes('Output=Hello, FullSession!') || !uia.after?.includes('Counter=Count: 2'))
+  const automationPassed = calculatorIndex(worker.variant)
+    ? uia.calculatorVerified === true && uia.assertion?.passed === true && uia.assertion.expected === 15 && uia.assertion.actual === 15
+    : uia.after?.includes('Output=Hello, FullSession!') && uia.after?.includes('Counter=Count: 2');
+  if (worker.uia.ExitCode !== 0 || !automationPassed)
     throw new Error('Expected UIA changes were not observed');
   const images = ['1-before', '2-after'].map(label => {
     const bytes = fs.readFileSync(path.join(directory, `${label}-printwindow-2.png`));

@@ -40,6 +40,24 @@ internal static class LifecycleTests
             Assert(report.GetProperty("report").GetProperty("success").GetBoolean(), "Single worker failed");
             Assert(backend.Creates == 1 && backend.Stops.SequenceEqual([10]) && backend.Owners.Count == 0, "Single cleanup changed");
         });
+        foreach (int count in new[] { 4, 8, 16 })
+            check($"offline lifecycle: {count} staged Calculator workers and exact cleanup", () =>
+            {
+                var backend = new Fake(count);
+                var requests = Enumerable.Range(0, count).Select(index => Requests[0] with
+                {
+                    Id = index.ToString("x32"), AgentName = $"A{index}-B{index}",
+                    AgentSid = $"S-1-5-21-1-2-3-{1001 + index}", ContainerId = $"opaque-{index}",
+                    Variant = $"calculator-{index + 1:D2}"
+                }).ToArray();
+                var results = Runtime.RunGroup(requests, Config, CancellationToken.None, backend)
+                    .Select(value => JsonSerializer.SerializeToElement(value, Protocol.Json)).ToArray();
+                Assert(results.All(result => result.GetProperty("report").GetProperty("success").GetBoolean()), "Larger grid failed");
+                Assert(backend.Prepared.SequenceEqual(Enumerable.Range(10, count)), "Preparation was not serial");
+                Assert(backend.Stops.Count == count && backend.Owners.Count == 0, "Larger grid cleanup incomplete");
+                Assert(results.Select(result => result.GetProperty("report").GetProperty("captureReleasedAt").GetDateTimeOffset())
+                    .Distinct().Count() == 1, "Larger grid release was not shared");
+            });
         foreach (int index in Enumerable.Range(0, 3))
         {
             check($"offline lifecycle: credential failure member {index}", () =>

@@ -28,7 +28,7 @@ internal static class Runtime
     internal static object[] RunGroup(Request[] requests, Configuration config, CancellationToken cancel, ISessionBackend backend)
     {
         backend.CheckPlatform();
-        if (requests.Length is not (1 or 3)) throw new InvalidDataException("Unsupported group size");
+        if (requests.Length is < 1 or > VisualWorkloads.MaxSessions) throw new InvalidDataException("Unsupported group size");
         if (requests.Any(request => backend.JournalExists(request.Id!)))
             throw new InvalidOperationException("A grid member already has a journal; recover instead of repeating creation");
         var outstanding = backend.Leases();

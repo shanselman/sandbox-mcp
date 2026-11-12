@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { atomicJson } from './broker-client-state.mjs';
 import { validatePng } from './png-evidence.mjs';
 import { capturePolicy } from './capture-policy.mjs';
+import { calculatorIndex } from './visual-workloads.mjs';
 export { validatePng } from './png-evidence.mjs';
 
 export function validateFrame(frame) {
@@ -164,11 +165,21 @@ export function summarizeStream(stream, fixture, expectedVariant, policyInput) {
     throw new Error('Stream mixes different sessions/processes');
   const expectedTheme = expectedVariant === 'light' ? 'Light' : 'Dark';
   const expectedScale = expectedVariant === 'dark-large' ? 1.5 : 1;
-  if (fixture?.variant !== expectedVariant || fixture.theme !== expectedTheme
-    || fixture.fixtureLayoutScale !== expectedScale || !Number.isFinite(fixture.actualWindowDpi) || fixture.actualWindowDpi <= 0
-    || !Number.isFinite(fixture.rasterizationScale) || fixture.rasterizationScale <= 0 || fixture.dpiWasChanged !== false
+  const calculator = calculatorIndex(expectedVariant);
+  const appearanceValid = calculator
+    ? fixture?.workload === 'calculator' && fixture.application === 'Microsoft.WindowsCalculator'
+      && fixture.theme === 'System (unmeasured)' && fixture.rasterizationScale === null
+    : fixture?.theme === expectedTheme && Number.isFinite(fixture.rasterizationScale) && fixture.rasterizationScale > 0;
+  if (fixture?.variant !== expectedVariant || !appearanceValid
+    || fixture.fixtureLayoutScale !== expectedScale || !Number.isFinite(fixture.actualWindowDpi) || fixture.actualWindowDpi <= 0 || fixture.dpiWasChanged !== false
     || fixture.scaleIsSimulation !== (expectedScale !== 1) || good.some(frame => frame.actualWindowDpi !== fixture.actualWindowDpi))
     throw new Error('Measured fixture settings differ from requested variant');
+  if (calculator) {
+    const expected = [17 + 2 * calculator, 60 + 3 * calculator, 100];
+    if (stream.workload !== 'calculator' || stream.automationChecks?.length !== 3
+      || stream.automationChecks.some((check, index) => check.passed !== true || check.expected !== expected[index] || check.actual !== expected[index]))
+      throw new Error('Calculator arithmetic assertions did not match this session scenario');
+  }
   const intervals = good.slice(1).map((frame, i) => frame.elapsedMs - good[i].elapsedMs);
   if (intervals.some(value => value <= 0)) throw new Error('Frame clock is not monotonic');
   if (good.slice(1).some((frame, i) => Date.parse(frame.at) <= Date.parse(good[i].at)))
@@ -201,5 +212,6 @@ export function summarizeStream(stream, fixture, expectedVariant, policyInput) {
     actualWindowDpi: fixture.actualWindowDpi, rasterizationScale: fixture.rasterizationScale,
     theme: fixture.theme, fixtureLayoutScale: fixture.fixtureLayoutScale, scaleIsSimulation: fixture.scaleIsSimulation,
     captureSizes: [...new Set(good.map(frame => `${frame.width}x${frame.height}`))],
+    ...(calculator ? { workload: 'calculator', automationChecks: stream.automationChecks } : {}),
   };
 }

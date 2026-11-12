@@ -224,7 +224,7 @@ internal static class Native
         try
         {
             var startInfo = new Startup { Size = (uint)Marshal.SizeOf<Startup>(), Desktop = @"winsta0\default" };
-            if (variant is not (null or "light" or "dark" or "dark-large")) throw new ArgumentException("Unsupported variant");
+            if (!VisualWorkloads.IsAllowed(variant)) throw new ArgumentException("Unsupported variant");
             var command = new StringBuilder($"\"{executable}\" installed-worker {sessionId} {key}" + (variant is null ? "" : $" {variant}"));
             if (!CreateProcessAsUserW(token, executable, command, IntPtr.Zero, IntPtr.Zero, false,
                 0x08000400, environment, Path.GetDirectoryName(executable)!, ref startInfo, out var info)) throw Error("Launch fixed agent worker");

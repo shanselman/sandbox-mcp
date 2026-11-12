@@ -119,7 +119,7 @@ function renderBatch(batch) {
     const tile = card(identity(run, index)), frame = run.progress?.frame, fixture = frame?.fixture;
     const name = sessionName(run, index);
     tile.title.textContent = name; tile.title.title = name;
-    tile.image.alt = `Captured WinUI window in ${name} session`;
+    tile.image.alt = `Captured application window in ${name} session`;
     if (grid.children[index] !== tile.root) grid.insertBefore(tile.root, grid.children[index] ?? null);
     tile.badge.className = `badge ${run.state}`;
     tile.badge.textContent = replay ? run.state.toUpperCase().replaceAll('-', ' · ')
@@ -142,6 +142,7 @@ function renderBatch(batch) {
       `Fixture scale ${fixture?.fixtureLayoutScale ?? run.stream?.fixtureLayoutScale ?? '—'}× · capture ${frame?.width ?? '—'}×${frame?.height ?? '—'}`,
       frame ? `Recorded ${new Date(frame.at).toLocaleTimeString()} · ${replay ? 'playback gap' : 'age'} ${(Math.max(0, run.ageMs) / 1000).toFixed(1)}s` : 'No frame received',
       run.stream ? `Measured ${run.stream.measuredFps.toFixed(3)} fps · max gap ${run.stream.maximumIntervalMs}ms` : '',
+      run.stream?.automationChecks ? `${run.stream.automationChecks.length} verified Calculator results: ${run.stream.automationChecks.map(check => check.actual).join(', ')}` : '',
     ].filter(Boolean).join('\n');
     tile.warning.textContent = [
       run.error ?? run.progress?.error ?? frame?.error ?? '',

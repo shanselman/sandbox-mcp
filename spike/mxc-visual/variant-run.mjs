@@ -6,22 +6,27 @@ import { fileURLToPath } from 'node:url';
 import { atomicJson } from './broker-client-state.mjs';
 import { readBatch } from './live-evidence.mjs';
 import { capturePolicy, policyArguments, describePolicy, LEGACY_CAPTURE_POLICY } from './capture-policy.mjs';
+import { FIXTURE_VARIANTS, CALCULATOR_VARIANTS, batchVariants } from './visual-workloads.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const options = policyArguments(process.argv.slice(2));
 const prepare = options.args[0] === '--prepare';
+const calculatorCount = prepare && options.args[2] === '--calculator' ? Number(options.args[3]) : null;
 const root = path.resolve(prepare ? options.args[1] ?? '' : options.args[0] ?? '');
-if ((!prepare && (options.args.length !== 1 || options.explicit)) || (prepare && options.args.length !== 2))
-  throw new Error('Expected --prepare <new-batch-directory> [--policy <JSON-file>], or <prepared-directory> (uses its saved policy)');
+if ((!prepare && (options.args.length !== 1 || options.explicit))
+  || (prepare && !(options.args.length === 2 || options.args.length === 4 && Number.isInteger(calculatorCount) && calculatorCount >= 1 && calculatorCount <= 16)))
+  throw new Error('Expected --prepare <new-batch-directory> [--calculator <1..16>] [--policy <JSON-file>], or <prepared-directory> (uses its saved policy)');
 const batchFile = path.join(root, 'batch.json');
 if (prepare) {
   if (fs.existsSync(root)) throw new Error('Use a new batch directory');
   fs.mkdirSync(root, { recursive: true });
   atomicJson(batchFile, { schema: 1, startedAt: new Date().toISOString(), mode: 'concurrent', targetFps: 1,
-    capturePolicy: options.policy, runs: ['light', 'dark', 'dark-large'].map(variant => ({ variant, state: 'pending' })) });
+    capturePolicy: options.policy, runs: (calculatorCount ? CALCULATOR_VARIANTS.slice(0, calculatorCount) : FIXTURE_VARIANTS)
+      .map(variant => ({ variant, ...(calculatorCount ? { name: `Calculator ${Number(variant.slice(-2))}` } : {}), state: 'pending' })) });
   console.log(JSON.stringify({ root, prepared: true }));
 } else {
   const batch = readBatch(root);
+  const variants = batchVariants(batch);
   if (batch.schema !== 1 || batch.mode !== 'concurrent' || batch.runs.some(run => run.state !== 'pending'))
     throw new Error('Batch is not fresh; do not silently repeat completed/provisioned work');
   const policy = capturePolicy(Object.hasOwn(batch, 'capturePolicy') ? batch.capturePolicy : LEGACY_CAPTURE_POLICY);
@@ -60,7 +65,7 @@ if (prepare) {
       for (const name of ['1-before-printwindow-2.png', '2-after-printwindow-2.png', 'fixture-settings.json', 'stream.json', 'authorization.json'])
         fs.copyFileSync(path.join(source, name), path.join(root, run.variant, name), fs.constants.COPYFILE_EXCL);
     }
-    if (code !== 0 || result.ok !== true || result.runs?.length !== 3 || result.overlapMs < policy.minOverlapMs)
+    if (code !== 0 || result.ok !== true || result.runs?.length !== variants.length || result.overlapMs < policy.minOverlapMs)
       throw new Error(result.error || stderr || 'Grid assertions failed');
     if (result.runs.some(run => !run.visual?.automationAndCaptureAssertionsPassed || !run.stream?.cadenceMet
       || run.stream?.validImages !== 30 || run.observedFrames !== 30 || !run.cleanup?.accountRemoved))
@@ -76,7 +81,7 @@ if (prepare) {
   atomicJson(path.join(root, 'report.json'), batch);
   const lines = [
     '# Full-session visual variants', '',
-    `Outcome: **${batch.state.toUpperCase()}**. Three coordinated Full sessions; measured common frame interval: ${batch.overlapMs ?? 0} ms.`,
+    `Outcome: **${batch.state.toUpperCase()}**. ${variants.length} coordinated Full sessions; measured common frame interval: ${batch.overlapMs ?? 0} ms.`,
     'MXC owns account/workspace lifecycle. The installed owner-only broker calls experimental Windows Full-session APIs.',
     '', '| Variant | Session | Theme | Actual window DPI | Fixture scale | Frames | Measured fps | Max gap ms | Cleanup |',
     '|---|---:|---|---:|---:|---:|---:|---:|---|',

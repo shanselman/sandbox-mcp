@@ -6,8 +6,11 @@ import { fileURLToPath } from 'node:url';
 import { readProgress, readBatch } from './live-evidence.mjs';
 import { cameraState, replayState } from './viewer-state.mjs';
 import { cameraRecordings } from './camera-recording.mjs';
+import { isVariant, VARIANT_PATTERN } from './visual-workloads.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const videoPattern = new RegExp(`^${VARIANT_PATTERN}/recording-[a-f0-9]{64}\\.mp4$`);
+const imagePattern = new RegExp(`^${VARIANT_PATTERN}/(frame-\\d{3}|1-before-printwindow-2|2-after-printwindow-2)\\.png$`);
 // The canvas host mirrors its theme using inline style elements, not scripts.
 export const CAMERA_CSP = "default-src 'self'; script-src 'self'; style-src 'self'; style-src-elem 'self' 'unsafe-inline'; img-src 'self'; media-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'";
 export async function startCameraServer(batchPath) {
@@ -29,7 +32,7 @@ export async function startCameraServer(batchPath) {
       })), serverTime: new Date().toISOString() };
     }
     const runs = batch.runs.map(run => {
-      if (!['light', 'dark', 'dark-large'].includes(run.variant)) throw new Error('Unexpected variant');
+      if (!isVariant(run.variant)) throw new Error('Unexpected variant');
       const progress = readProgress(path.join(root, run.variant));
       return { ...cameraState(batch, run, progress, Date.now()), recording: recording(run, progress, batch) };
     });
@@ -57,7 +60,7 @@ export async function startCameraServer(batchPath) {
         try { value = JSON.parse(body); } catch { return send(400, 'text/plain', 'Invalid playback JSON'); }
         if (!Array.isArray(value) || value.length > 16 || value.some(tile =>
           !tile || Object.keys(tile).sort().join() !== 'currentTime,duration,error,loops,paused,readyState,variant'
-          || !['light', 'dark', 'dark-large'].includes(tile.variant)
+          || !isVariant(tile.variant)
           || ![tile.currentTime, tile.duration].every(number => Number.isFinite(number) && number >= 0 && number <= 661)
           || !Number.isInteger(tile.loops) || tile.loops < 0
           || !Number.isInteger(tile.readyState) || tile.readyState < 0 || tile.readyState > 4
@@ -89,7 +92,7 @@ export async function startCameraServer(batchPath) {
         requests.appearances++;
         return send(200, 'application/json', '{"ok":true}');
       }
-      const videoRoute = /^(light|dark|dark-large)\/recording-[a-f0-9]{64}\.mp4$/.test(relative);
+      const videoRoute = videoPattern.test(relative);
       if (request.method !== 'GET' && !(request.method === 'HEAD' && videoRoute)) return send(403, 'text/plain', 'Forbidden');
       if (videoRoute) {
         const directory = path.join(root, relative.split('/')[0]);
@@ -136,7 +139,7 @@ export async function startCameraServer(batchPath) {
         return fs.existsSync(file) ? send(200, relative.endsWith('.json') ? 'application/json' : 'text/plain; charset=utf-8', fs.readFileSync(file))
           : send(404, 'text/plain', 'Report is not finished');
       }
-      if (/^(light|dark|dark-large)\/(frame-\d{3}|1-before-printwindow-2|2-after-printwindow-2)\.png$/.test(relative)) {
+      if (imagePattern.test(relative)) {
         const file = path.join(root, ...relative.split('/'));
         if (!fs.existsSync(file)) return send(404, 'text/plain', 'Frame not yet available');
         const stat = fs.lstatSync(file);

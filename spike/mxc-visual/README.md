@@ -335,8 +335,9 @@ to make the status look clean.
 ### 5. Only then consider a coordinated grid and local viewer
 
 After an approved single run and confirmed cleanup, the next **separately
-approved** native step is three coordinated sessions, not arbitrary 4/8/16
-concurrency. Use a fresh evidence directory:
+approved** native step is three coordinated sessions, not an immediate jump to
+4/8/16 concurrency. The Calculator stress path below requires its own staged
+approval. Use a fresh evidence directory:
 
 ```powershell
 # Terminal 1: preparation and read-only viewer do not create native sessions.
@@ -357,6 +358,58 @@ collected. New batches default to average >=0.9fps and >=20 seconds common
 coverage, but have **no hard maximum-frame-gap cutoff**. Long gaps remain
 visible timing warnings, not silently discarded measurements. Larger viewer
 layouts/replay do not establish native capacity or make failed batches pass.
+
+### Calculator automation and bounded stress grids
+
+The fixed Calculator workload activates
+`Microsoft.WindowsCalculator_8wekyb3d8bbwe!App` (the app launched by `calc.exe`)
+**as the owned agent**, never as System. The app must be installed and available
+in the new agent profile; an activation or UI Automation failure fails the run.
+There is no arbitrary executable/command field in the privileged protocol.
+
+Each numbered Calculator enters different addition and multiplication inputs,
+then a subtraction, one UIA button per captured frame. All three results are
+asserted against the scenario's expected arithmetic, in addition to a `7 + 8 =
+15` before/after probe. Recordings must show at least six distinct images.
+Actual window DPI is measured; Calculator theme and XAML rasterization scale
+are explicitly unmeasured rather than borrowed from the fixture.
+
+```powershell
+# Preparation alone does not create sessions.
+node variant-run.mjs --prepare evidence\calculator-one --calculator 1
+node camera-grid.mjs evidence\calculator-one
+# Only after explicit native-test approval and an updated installed broker:
+node variant-run.mjs evidence\calculator-one
+```
+
+`--calculator` accepts 1 through 16; every member has a distinct fixed
+`calculator-01` through `calculator-16` identity. Existing three-theme batches
+remain supported. The upper bound is protocol capacity, **not demonstrated
+Windows capacity or a safety guarantee**. Use separately prepared stages
+1, 3, 4, 8, 16, retaining sequential session creation and worker warm-up.
+Stop at the first failed stage, inadequate memory headroom, crash or uncertain
+cleanup. A full successful ramp creates 32 account lifecycles and may retain
+32 companion profiles; it does not authorize deleting them.
+
+**Current qualification (November 12 UTC): blocked at the single-session
+control.** Calculator activation returned a process in the owned Full session,
+but the initial UIA lookup threw `ElementNotAvailableException`. After an
+explicitly approved retry with bounded handling of that transient exception,
+the next control attempted readiness 52 times and ended with a UIA COM timeout
+(`0x80131505`). It never reached the required `CalculatorResults` readiness
+check or started capturing. The exact window/provider failure is not yet
+established; do not describe the transient-retry change as a runtime fix.
+
+The ramp stopped: **no 3-, 4-, 8- or 16-Calculator stage ran**. Both original
+accounts/sessions were removed, the broker pending queue was empty, the host
+boot time was unchanged, and no relevant Application Error event was found.
+Two unloaded companion profiles remained (191 -> 193). The installed retry
+candidate is `9B3AE69BC29F9E2C576720831DA22B3A4A84794AEB279C81F34B9E1E2704FE70`.
+Its 122 broker checks and three isolated helper-readiness checks passed, as
+did 69 spike Node checks and 13 file-only packaging checks. These establish
+offline behavior only, not usable Calculator automation or sixteen-session
+native capacity. Preserve the failed controls and resolve Calculator UIA
+readiness before seeking approval for another native attempt.
 
 ### Live cameras and looping recordings
 
@@ -400,8 +453,12 @@ in `worker.json`, so startup, barrier, capture and shutdown failures remain
 distinguishable. These are bounded lifecycle safeguards, separate from the
 selected timing-quality policy: startup 120 seconds per staged worker, active
 capture 90 seconds with a 30-second progress timeout, exit/drain 15 seconds.
-The whole broker request has a 540-second budget and the client allows
-660 seconds for the response and cleanup. Synchronous Windows create/stop
+Up to three workers retain a 540-second broker budget and a 660-second client
+response budget. Larger grids scale the broker bound to `150*N + 135` seconds
+and add `max(120, 30*N)` seconds for the client response/cleanup. Each worker
+still has a 120-second startup bound; this is not unlimited waiting.
+The helper's capture barrier allows up to 1,980 seconds for sequential
+preparation of sixteen workers. Synchronous Windows create/stop
 calls are still not forcibly interrupted by these budgets.
 
 Select tolerances **before** starting a run. A policy JSON file accepts:

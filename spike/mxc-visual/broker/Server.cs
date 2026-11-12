@@ -105,7 +105,7 @@ internal static class Server
                 {
                     if (recoveryError is not null) throw new InvalidOperationException("Broker recovery/build check is required: " + recoveryError);
                     using var run = CancellationTokenSource.CreateLinkedTokenSource(stopping);
-                    run.CancelAfter(TimeSpan.FromMilliseconds(CaptureRunLimits.RunMs));
+                    run.CancelAfter(TimeSpan.FromMilliseconds(CaptureRunLimits.RunForMembers(request.Members?.Length ?? 1)));
                     using var monitorStop = CancellationTokenSource.CreateLinkedTokenSource(stopping);
                     var monitor = MonitorDisconnect(pipe, run, monitorStop.Token);
                     try { response = await Task.Run(() => Runtime.Run(request, config, run.Token), CancellationToken.None); }
@@ -166,7 +166,7 @@ internal static class Server
     {
         var compatibility = Platform.Inspect();
         return new { ok = true, protocol = 1, ready = recoveryError is null && compatibility.Ready,
-            recoveryError, compatibility, variants = new[] { "light", "dark", "dark-large" }, maxCoordinatedSessions = 3, pending = Runtime.Summaries() };
+            recoveryError, compatibility, variants = VisualWorkloads.Variants, maxCoordinatedSessions = VisualWorkloads.MaxSessions, pending = Runtime.Summaries() };
     }
     private static async Task MonitorDisconnect(Stream pipe, CancellationTokenSource run, CancellationToken stop)
     {

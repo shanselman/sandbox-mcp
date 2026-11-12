@@ -147,7 +147,7 @@ internal static class Program
             throw new UnauthorizedAccessException("Installed worker must run only as the owned non-console agent");
         if (!Guid.TryParseExact(outputKey, "N", out _) || outputKey != outputKey.ToLowerInvariant())
             throw new ArgumentException("Invalid output key");
-        if (variant is not (null or "light" or "dark" or "dark-large"))
+        if (!VisualWorkloads.IsAllowed(variant))
             throw new ArgumentException("Unsupported fixed fixture variant");
         string release = Directory.GetParent(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))!.FullName;
         string output = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Shared", "broker-" + outputKey);
@@ -435,29 +435,34 @@ internal static class Program
                 throw new InvalidOperationException("Worker is not in the expected owned session");
             File.WriteAllText(Path.Combine(job.Output, "worker-started.json"), JsonSerializer.Serialize(report, JsonOptions));
             var start = new ProcessStartInfo(job.App) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(job.App)! };
+            bool calculator = VisualWorkloads.CalculatorNumber(job.Variant) > 0;
             if (job.Variant is not null)
             {
-                if (job.Variant is not ("light" or "dark" or "dark-large")) throw new ArgumentException("Unsupported fixture variant");
+                if (!VisualWorkloads.IsAllowed(job.Variant)) throw new ArgumentException("Unsupported fixture variant");
                 start.Environment["SBX_VISUAL_VARIANT"] = job.Variant;
                 start.Environment["SBX_VISUAL_OUTPUT"] = job.Output;
                 report["variant"] = job.Variant;
             }
-            app = Process.Start(start)
+            app = (calculator ? CalculatorApp.Start() : Process.Start(start))
                 ?? throw new InvalidOperationException("App failed to start");
             report["appPid"] = app.Id;
             if (job.Variant is not null)
             {
-                var ready = Helper(job, "uia", "--pid", app.Id.ToString());
+                var ready = calculator
+                    ? Helper(job, "calculator-ready", "--pid", app.Id.ToString(), "--out", job.Output, "--variant", job.Variant)
+                    : Helper(job, "uia", "--pid", app.Id.ToString());
                 report["readiness"] = ready;
                 if (ready.ExitCode != 0) throw new InvalidOperationException("WinUI readiness inspection failed");
                 using var observed = JsonDocument.Parse(ready.Stdout);
-                if (!observed.RootElement.GetProperty("uiaIds").EnumerateArray().Any(item => item.GetString() == "ControlType.Text:Counter:Count: 0"))
+                if (calculator ? !observed.RootElement.GetProperty("calculatorReady").GetBoolean()
+                    : !observed.RootElement.GetProperty("uiaIds").EnumerateArray().Any(item => item.GetString() == "ControlType.Text:Counter:Count: 0"))
                     throw new InvalidOperationException("Initial counter was not ready before the baseline capture");
             }
             var before = Helper(job, "capture", "--pid", app.Id.ToString(), "--out", job.Output, "--label", "1-before");
             report["before"] = before;
-            var uia = Helper(job, "uia", "--pid", app.Id.ToString(), "--set", "NameBox=FullSession",
-                "--invoke", "GreetButton,IncrementButton,IncrementButton");
+            var uia = calculator ? Helper(job, "calculator-probe", "--pid", app.Id.ToString())
+                : Helper(job, "uia", "--pid", app.Id.ToString(), "--set", "NameBox=FullSession",
+                    "--invoke", "GreetButton,IncrementButton,IncrementButton");
             report["uia"] = uia;
             var after = Helper(job, "capture", "--pid", app.Id.ToString(), "--out", job.Output, "--label", "2-after");
             report["after"] = after;
@@ -473,6 +478,7 @@ internal static class Program
                     var startStream = new ProcessStartInfo(job.Helper);
                     foreach (string argument in new[] { "stream", "--pid", app.Id.ToString(), "--out", job.Output, "--coordinated", "true" })
                         startStream.ArgumentList.Add(argument);
+                    if (calculator) { startStream.ArgumentList.Add("--variant"); startStream.ArgumentList.Add(job.Variant); }
                     var observed = StreamHelperRunner.Run(startStream, async cancel =>
                     {
                         File.WriteAllText(Path.Combine(job.Output, "capture-ready.json"), JsonSerializer.Serialize(new
