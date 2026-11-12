@@ -34,6 +34,43 @@ test('Calculator verdict requires every scenario-specific UIA result without inv
   assert.throws(() => summarizeStream(data, settings, settings.variant), /arithmetic assertions/);
   assert.throws(() => summarizeStream(data, { ...settings, theme: 'Dark' }, settings.variant), /settings/);
 });
+test('sample calculator records measured appearance and cannot masquerade as Windows Calculator', () => {
+  const settings = { variant: 'sample-calculator-01', workload: 'calculator-sample', application: 'SandboxShowcase.WinUI.Calculator',
+    theme: 'Light', actualWindowDpi: 96, rasterizationScale: 1, fixtureLayoutScale: 1, dpiWasChanged: false, scaleIsSimulation: false };
+  const data = { ...stream(), workload: 'calculator-sample',
+    automationChecks: [19, 63, 100].map(value => ({ expected: value, actual: value, passed: true })) };
+  assert.equal(summarizeStream(data, settings, settings.variant).workload, 'calculator-sample');
+  assert.throws(() => summarizeStream({ ...data, workload: 'calculator' }, settings, settings.variant), /arithmetic assertions/);
+  assert.throws(() => summarizeStream(data, { ...settings, application: 'Microsoft.WindowsCalculator' }, settings.variant), /settings/);
+});
+test('startup picture is visible before readiness, bound to the session, and excluded from measured frames', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'startup-preview-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const workspace = path.join(root, 'shared'), source = path.join(workspace, `broker-${key}`), destination = path.join(root, 'out');
+  fs.mkdirSync(source, { recursive: true });
+  const preview = { ...frameData(0), kind: 'startup', file: 'startup.png' };
+  delete preview.sequence;
+  fs.writeFileSync(path.join(source, 'startup.png'), png(10));
+  fs.writeFileSync(path.join(source, 'startup.json'), JSON.stringify(preview));
+  const observed = { sequences: new Map() };
+  assert.equal(readFrame(workspace, destination, observed).file, 'startup.png');
+  assert.equal(observed.sequences.size, 0);
+  fs.writeFileSync(path.join(source, 'frame-000.png'), png(20));
+  fs.writeFileSync(path.join(source, 'frame-meta-000.json'), JSON.stringify({ ...frameData(0), sessionId: 99 }));
+  assert.throws(() => readFrame(workspace, destination, observed), /identity changed/);
+  fs.writeFileSync(path.join(source, 'frame-meta-000.json'), JSON.stringify(frameData(0)));
+  assert.equal(readFrame(workspace, destination, observed).sequence, 0);
+  assert.equal(observed.sequences.size, 1);
+  fs.unlinkSync(path.join(source, 'frame-meta-000.json'));
+  const collector = startLiveCollector(workspace, path.join(root, 'failure'), { variant: 'sample-calculator-01' });
+  await new Promise(resolve => setTimeout(resolve, 350));
+  assert.equal(readProgress(path.join(root, 'failure')).state, 'preparing');
+  const final = collector.finish('UIA readiness failed');
+  assert.equal(final.state, 'failed');
+  assert.equal(final.observedFrames, 0);
+  assert.equal(final.preview.file, 'startup.png');
+  assert.equal(fs.existsSync(path.join(root, 'failure', 'startup.png')), true);
+});
 test('slow cadence is a failed threshold, not a cosmetic 1fps label', () => {
   const data = stream();
   for (const frame of data.frames) frame.elapsedMs *= 1.2;

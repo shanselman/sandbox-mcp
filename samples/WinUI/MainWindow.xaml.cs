@@ -5,6 +5,7 @@ using Windows.Graphics;
 using Microsoft.UI.Xaml.Media;
 using System.Text.Json;
 using System.IO;
+using System.Text.RegularExpressions;
 
 namespace HelloWinUI;
 
@@ -28,8 +29,17 @@ public sealed partial class MainWindow : Window
         AppWindow.Resize(new SizeInt32((int)(520 * scale), (int)(400 * scale)));
         string? variant = Environment.GetEnvironmentVariable("SBX_VISUAL_VARIANT");
         if (variant is null) return;
-        if (variant is not ("light" or "dark" or "dark-large")) throw new ArgumentException("Unsupported visual fixture variant");
-        Root.RequestedTheme = variant == "light" ? ElementTheme.Light : ElementTheme.Dark;
+        var calculatorMatch = Regex.Match(variant, "^sample-calculator-(0[1-9]|1[0-6])$");
+        int calculator = calculatorMatch.Success ? int.Parse(calculatorMatch.Groups[1].Value) : 0;
+        if (calculator == 0 && variant is not ("light" or "dark" or "dark-large")) throw new ArgumentException("Unsupported visual fixture variant");
+        Root.RequestedTheme = variant == "light" || calculator % 2 == 1 ? ElementTheme.Light : ElementTheme.Dark;
+        if (calculator > 0)
+        {
+            Title = $"Sample calculator {calculator:00}";
+            Root.Children.Clear(); Root.RowDefinitions.Clear();
+            Root.Children.Add(CalculatorView.Create(calculator, VariantInfo));
+            AppWindow.Resize(new SizeInt32((int)(640 * scale), (int)(560 * scale)));
+        }
         double layoutScale = variant == "dark-large" ? 1.5 : 1;
         if (layoutScale != 1)
         {
@@ -57,7 +67,9 @@ public sealed partial class MainWindow : Window
                 ?? throw new InvalidOperationException("Missing visual fixture output");
             var settings = new { variant, theme = Root.ActualTheme.ToString(), actualWindowDpi = dpi,
                 rasterizationScale = Root.XamlRoot.RasterizationScale, fixtureLayoutScale = layoutScale,
-                dpiWasChanged = false, scaleIsSimulation = layoutScale != 1 };
+                dpiWasChanged = false, scaleIsSimulation = layoutScale != 1,
+                workload = calculator > 0 ? "calculator-sample" : "fixture",
+                application = calculator > 0 ? "SandboxShowcase.WinUI.Calculator" : "SandboxShowcase.WinUI" };
             string file = Path.Combine(output, "fixture-settings.json");
             File.WriteAllText(file + ".tmp", JsonSerializer.Serialize(settings));
             File.Move(file + ".tmp", file, true);

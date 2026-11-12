@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { atomicJson } from './broker-client-state.mjs';
 import { validatePng } from './png-evidence.mjs';
 import { capturePolicy } from './capture-policy.mjs';
-import { calculatorIndex } from './visual-workloads.mjs';
+import { calculatorIndex, sampleCalculatorIndex } from './visual-workloads.mjs';
 export { validatePng } from './png-evidence.mjs';
 
 export function validateFrame(frame) {
@@ -34,7 +34,9 @@ export function readFrame(workspace, destination, observed, now = Date.now()) {
   if (fs.lstatSync(source).isSymbolicLink()) throw new Error('Live output is a reparse point');
   const metadataFiles = fs.readdirSync(source).filter(name => /^frame-meta-\d{3}\.json$/.test(name)).sort();
   if (metadataFiles.length > 30) throw new Error('Too many immutable frame records');
-  if (!metadataFiles.length && !fs.existsSync(path.join(source, 'live.json'))) return null;
+  if (!metadataFiles.length && !fs.existsSync(path.join(source, 'live.json')))
+    return fs.existsSync(path.join(source, 'startup.json'))
+      ? readPublishedFrame(source, 'startup.json', destination, observed, now) : null;
   // A poll can miss several publication times. Drain the immutable backlog,
   // but retain original capture times so collected-late frames are not "live".
   const pending = metadataFiles.length ? metadataFiles.filter(name =>
@@ -51,9 +53,14 @@ function readPublishedFrame(source, name, destination, observed, now) {
   const status = path.join(source, name);
   if (fs.lstatSync(status).isSymbolicLink() || fs.statSync(status).size > 16384) throw new Error('Invalid live metadata');
   const frame = JSON.parse(fs.readFileSync(status, 'utf8'));
-  validateFrame(frame);
+  const startup = name === 'startup.json';
+  if (startup) {
+    if (frame.kind !== 'startup' || frame.file !== 'startup.png' || frame.error)
+      throw new Error('Invalid startup preview');
+    validateFrame({ ...frame, sequence: 0, file: 'frame-000.png' });
+  } else validateFrame(frame);
   if (Date.parse(frame.at) > now + 5000) throw new Error('Frame clock is in the future');
-  if (name !== 'live.json' && name !== `frame-meta-${String(frame.sequence).padStart(3, '0')}.json`)
+  if (!startup && name !== 'live.json' && name !== `frame-meta-${String(frame.sequence).padStart(3, '0')}.json`)
     throw new Error('Frame sequence does not match immutable metadata');
   if (observed.sessionId && (observed.sessionId !== frame.sessionId || observed.pid !== frame.pid))
     throw new Error('Live session/process identity changed');
@@ -66,7 +73,7 @@ function readPublishedFrame(source, name, destination, observed, now) {
   const bytes = fs.readFileSync(image);
   validatePng(bytes, frame);
   const hash = createHash('sha256').update(bytes).digest('hex');
-  const previous = observed.sequences.get(frame.sequence);
+  const previous = startup ? observed.startup : observed.sequences.get(frame.sequence);
   if (previous && (previous.hash !== hash || previous.at !== frame.at || previous.elapsedMs !== frame.elapsedMs))
     throw new Error('Immutable frame changed after publication');
   fs.mkdirSync(destination, { recursive: true });
@@ -86,8 +93,10 @@ function readPublishedFrame(source, name, destination, observed, now) {
     if (fs.lstatSync(settings).isSymbolicLink() || fs.statSync(settings).size > 16384) throw new Error('Invalid fixture settings');
     fixture = JSON.parse(fs.readFileSync(settings, 'utf8'));
   }
-  if (!previous) observed.sequences.set(frame.sequence, { ...frame, hash, receivedAt: new Date(now).toISOString() });
-  return { ...frame, receivedAt: observed.sequences.get(frame.sequence).receivedAt,
+  const receipt = previous ?? { ...frame, hash, receivedAt: new Date(now).toISOString() };
+  if (startup) observed.startup = receipt;
+  else if (!previous) observed.sequences.set(frame.sequence, receipt);
+  return { ...frame, receivedAt: receipt.receivedAt,
     hash, fixture };
 }
 
@@ -127,7 +136,9 @@ export function startLiveCollector(workspace, destination, initial) {
     if (stopped) return;
     try {
       const frame = readFrame(workspace, destination, observed);
-      if (frame && (frame.sequence !== progress.frame?.sequence || frame.error !== progress.frame?.error)) {
+      if (frame?.kind === 'startup' && frame.hash !== progress.preview?.hash) {
+        progress = { ...progress, state: 'preparing', preview: frame }; write();
+      } else if (frame && frame.kind !== 'startup' && (frame.sequence !== progress.frame?.sequence || frame.error !== progress.frame?.error)) {
         progress = { ...progress, state: frame.error ? 'capture-error' : 'live', frame }; write();
       }
     } catch (error) {
@@ -166,7 +177,11 @@ export function summarizeStream(stream, fixture, expectedVariant, policyInput) {
   const expectedTheme = expectedVariant === 'light' ? 'Light' : 'Dark';
   const expectedScale = expectedVariant === 'dark-large' ? 1.5 : 1;
   const calculator = calculatorIndex(expectedVariant);
-  const appearanceValid = calculator
+  const sample = sampleCalculatorIndex(expectedVariant);
+  const appearanceValid = sample
+    ? fixture?.workload === 'calculator-sample' && fixture.application === 'SandboxShowcase.WinUI.Calculator'
+      && fixture.theme === (sample % 2 ? 'Light' : 'Dark') && Number.isFinite(fixture.rasterizationScale) && fixture.rasterizationScale > 0
+    : calculator
     ? fixture?.workload === 'calculator' && fixture.application === 'Microsoft.WindowsCalculator'
       && fixture.theme === 'System (unmeasured)' && fixture.rasterizationScale === null
     : fixture?.theme === expectedTheme && Number.isFinite(fixture.rasterizationScale) && fixture.rasterizationScale > 0;
@@ -176,7 +191,7 @@ export function summarizeStream(stream, fixture, expectedVariant, policyInput) {
     throw new Error('Measured fixture settings differ from requested variant');
   if (calculator) {
     const expected = [17 + 2 * calculator, 60 + 3 * calculator, 100];
-    if (stream.workload !== 'calculator' || stream.automationChecks?.length !== 3
+    if (stream.workload !== (sample ? 'calculator-sample' : 'calculator') || stream.automationChecks?.length !== 3
       || stream.automationChecks.some((check, index) => check.passed !== true || check.expected !== expected[index] || check.actual !== expected[index]))
       throw new Error('Calculator arithmetic assertions did not match this session scenario');
   }
@@ -212,6 +227,6 @@ export function summarizeStream(stream, fixture, expectedVariant, policyInput) {
     actualWindowDpi: fixture.actualWindowDpi, rasterizationScale: fixture.rasterizationScale,
     theme: fixture.theme, fixtureLayoutScale: fixture.fixtureLayoutScale, scaleIsSimulation: fixture.scaleIsSimulation,
     captureSizes: [...new Set(good.map(frame => `${frame.width}x${frame.height}`))],
-    ...(calculator ? { workload: 'calculator', automationChecks: stream.automationChecks } : {}),
+    ...(calculator ? { workload: sample ? 'calculator-sample' : 'calculator', automationChecks: stream.automationChecks } : {}),
   };
 }

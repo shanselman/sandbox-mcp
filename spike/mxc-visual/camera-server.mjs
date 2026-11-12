@@ -10,7 +10,7 @@ import { isVariant, VARIANT_PATTERN } from './visual-workloads.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const videoPattern = new RegExp(`^${VARIANT_PATTERN}/recording-[a-f0-9]{64}\\.mp4$`);
-const imagePattern = new RegExp(`^${VARIANT_PATTERN}/(frame-\\d{3}|1-before-printwindow-2|2-after-printwindow-2)\\.png$`);
+const imagePattern = new RegExp(`^${VARIANT_PATTERN}/(startup|frame-\\d{3}|1-before-printwindow-2|2-after-printwindow-2)\\.png$`);
 // The canvas host mirrors its theme using inline style elements, not scripts.
 export const CAMERA_CSP = "default-src 'self'; script-src 'self'; style-src 'self'; style-src-elem 'self' 'unsafe-inline'; img-src 'self'; media-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'";
 export async function startCameraServer(batchPath) {

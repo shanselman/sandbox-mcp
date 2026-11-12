@@ -13,6 +13,7 @@
     <Compile Include="..\CaptureSchedule.cs" Link="CaptureSchedule.cs" />
     <Compile Include="..\CaptureRunLimits.cs" Link="CaptureRunLimits.cs" />
     <Compile Include="..\VisualWorkloads.cs" Link="VisualWorkloads.cs" />
+    <Compile Include="..\..\..\samples\WinUI\CalculatorModel.cs" Link="CalculatorModel.cs" />
     <Compile Include="..\StreamHelperRunner.cs" Link="StreamHelperRunner.cs" />
   </ItemGroup>
 </Project>

@@ -231,6 +231,22 @@ test('encoding and playback errors keep the captured image and explain the failu
   assert.equal(video.hidden, true);
   assert.match(tiles()[0].children[4].textContent, /media error 4/);
 });
+test('startup pictures remain visible when automation fails before the measured stream', () => {
+  const { context, tiles } = harness();
+  const state = batch(1);
+  state.runs[0].state = 'preparing';
+  state.runs[0].image = 'sample-calculator-01/startup.png';
+  state.runs[0].progress = { preview: { file: 'startup.png', at: '2026-11-11T00:00:00Z' } };
+  context.renderBatch(state);
+  assert.equal(tiles()[0].children[1].children[0].hidden, false);
+  assert.match(tiles()[0].children[0].children[1].textContent, /PREPARING/);
+  assert.match(tiles()[0].children[2].children[0].textContent, /not a measured frame/);
+  state.runs[0].state = 'failed';
+  state.runs[0].error = 'UIA readiness failed';
+  context.renderBatch(state);
+  assert.equal(tiles()[0].children[1].children[0].hidden, false);
+  assert.equal(tiles()[0].children[0].children[1].textContent, 'FAILED');
+});
 
 const browserPath = process.env.VIEWER_TEST_BROWSER ?? [
   process.env['ProgramFiles(x86)'] && path.join(process.env['ProgramFiles(x86)'], 'Microsoft', 'Edge', 'Application', 'msedge.exe'),

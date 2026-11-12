@@ -2,10 +2,13 @@ internal static class VisualWorkloads
 {
     public const int MaxSessions = 16;
     public static readonly string[] Variants = ["light", "dark", "dark-large",
-        .. Enumerable.Range(1, MaxSessions).Select(index => $"calculator-{index:D2}")];
+        .. Enumerable.Range(1, MaxSessions).Select(index => $"calculator-{index:D2}"),
+        .. Enumerable.Range(1, MaxSessions).Select(index => $"sample-calculator-{index:D2}")];
     public static bool IsAllowed(string? variant) => variant is null || Variants.Contains(variant);
     public static int CalculatorNumber(string? variant) =>
         variant is not null && Variants.Skip(3).Contains(variant) ? int.Parse(variant[^2..]) : 0;
+    public static bool IsSampleCalculator(string? variant) =>
+        variant?.StartsWith("sample-calculator-") == true && CalculatorNumber(variant) > 0;
 
     internal sealed record Step(string Button, int? Expected = null);
     public static Step[] CalculatorSteps(int index)

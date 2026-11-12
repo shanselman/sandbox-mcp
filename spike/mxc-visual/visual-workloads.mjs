@@ -1,8 +1,10 @@
 export const FIXTURE_VARIANTS = ['light', 'dark', 'dark-large'];
 export const CALCULATOR_VARIANTS = Array.from({ length: 16 }, (_, index) => `calculator-${String(index + 1).padStart(2, '0')}`);
-export const VARIANT_PATTERN = '(?:light|dark|dark-large|calculator-(?:0[1-9]|1[0-6]))';
-export const isVariant = variant => FIXTURE_VARIANTS.includes(variant) || CALCULATOR_VARIANTS.includes(variant);
-export const calculatorIndex = variant => CALCULATOR_VARIANTS.indexOf(variant) + 1;
+export const SAMPLE_CALCULATOR_VARIANTS = Array.from({ length: 16 }, (_, index) => `sample-calculator-${String(index + 1).padStart(2, '0')}`);
+export const VARIANT_PATTERN = '(?:light|dark|dark-large|(?:sample-)?calculator-(?:0[1-9]|1[0-6]))';
+export const isVariant = variant => FIXTURE_VARIANTS.includes(variant) || CALCULATOR_VARIANTS.includes(variant) || SAMPLE_CALCULATOR_VARIANTS.includes(variant);
+export const sampleCalculatorIndex = variant => SAMPLE_CALCULATOR_VARIANTS.indexOf(variant) + 1;
+export const calculatorIndex = variant => CALCULATOR_VARIANTS.indexOf(variant) + 1 || sampleCalculatorIndex(variant);
 export function batchVariants(batch) {
   const variants = batch?.runs?.map(run => run.variant);
   if (!variants || variants.length < 1 || variants.length > 16 || new Set(variants).size !== variants.length

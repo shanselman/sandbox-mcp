@@ -116,14 +116,15 @@ function renderBatch(batch) {
     : 'MXC provisions the accounts; our installed broker creates Full sessions through experimental Windows APIs. Completed tiles show recorded evidence, not live desktops.';
   let live = 0, passed = 0;
   for (const [index, run] of batch.runs.entries()) {
-    const tile = card(identity(run, index)), frame = run.progress?.frame, fixture = frame?.fixture;
+    const tile = card(identity(run, index)), frame = run.progress?.frame, preview = run.progress?.preview, fixture = frame?.fixture ?? preview?.fixture;
     const name = sessionName(run, index);
     tile.title.textContent = name; tile.title.title = name;
     tile.image.alt = `Captured application window in ${name} session`;
     if (grid.children[index] !== tile.root) grid.insertBefore(tile.root, grid.children[index] ?? null);
     tile.badge.className = `badge ${run.state}`;
     tile.badge.textContent = replay ? run.state.toUpperCase().replaceAll('-', ' · ')
-      : run.state === 'live' ? 'LIVE · 1fps target' : run.state === 'passed' || run.state === 'complete' ? 'RECORDED · finished' : run.state.toUpperCase();
+      : run.state === 'live' ? 'LIVE · 1fps target' : run.state === 'preparing' ? 'PREPARING · startup image'
+      : run.state === 'passed' || run.state === 'complete' ? 'RECORDED · finished' : run.state.toUpperCase();
     if (run.state === 'live') live++;
     if (run.state === 'passed') passed++;
     if (run.image && tile.image.dataset.frame !== run.image) {
@@ -135,12 +136,14 @@ function renderBatch(batch) {
       tile.image.removeAttribute('src');
     }
     renderRecording(tile, run);
-    tile.evidenceSummary.textContent = `Evidence · frame ${frame ? frame.sequence + 1 : '—'}/30`;
+    tile.evidenceSummary.textContent = !frame && preview ? 'Evidence · startup preview (not a measured frame)'
+      : `Evidence · frame ${frame ? frame.sequence + 1 : '—'}/30`;
     tile.metrics.textContent = [
       `Session ${frame?.sessionId ?? run.sessionId ?? '—'} · frame ${frame ? frame.sequence + 1 : '—'}/30`,
       `Theme ${fixture?.theme ?? run.stream?.theme ?? 'pending'} · actual DPI ${fixture?.actualWindowDpi ?? run.stream?.actualWindowDpi ?? '—'}`,
       `Fixture scale ${fixture?.fixtureLayoutScale ?? run.stream?.fixtureLayoutScale ?? '—'}× · capture ${frame?.width ?? '—'}×${frame?.height ?? '—'}`,
-      frame ? `Recorded ${new Date(frame.at).toLocaleTimeString()} · ${replay ? 'playback gap' : 'age'} ${(Math.max(0, run.ageMs) / 1000).toFixed(1)}s` : 'No frame received',
+      frame ? `Recorded ${new Date(frame.at).toLocaleTimeString()} · ${replay ? 'playback gap' : 'age'} ${(Math.max(0, run.ageMs) / 1000).toFixed(1)}s`
+        : preview ? `Startup picture ${new Date(preview.at).toLocaleTimeString()} · measured capture has not started` : 'No frame received',
       run.stream ? `Measured ${run.stream.measuredFps.toFixed(3)} fps · max gap ${run.stream.maximumIntervalMs}ms` : '',
       run.stream?.automationChecks ? `${run.stream.automationChecks.length} verified Calculator results: ${run.stream.automationChecks.map(check => check.actual).join(', ')}` : '',
     ].filter(Boolean).join('\n');

@@ -10,7 +10,8 @@ export function cameraState(batch, run, progress, now) {
   else if (frame && ageMs > 2500) state = 'stale';
   else state = progress?.state ?? run.state;
   return { ...run, progress, state, ageMs,
-    image: frame?.file && /^frame-\d{3}\.png$/.test(frame.file) ? `${run.variant}/${frame.file}` : null };
+    image: frame?.file && /^frame-\d{3}\.png$/.test(frame.file) ? `${run.variant}/${frame.file}`
+      : progress?.preview?.file === 'startup.png' ? `${run.variant}/startup.png` : null };
 }
 
 export function replayState(batch, now, playbackStartedAt) {

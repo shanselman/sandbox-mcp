@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { batchVariants, CALCULATOR_VARIANTS, FIXTURE_VARIANTS } from '../visual-workloads.mjs';
+import { batchVariants, CALCULATOR_VARIANTS, SAMPLE_CALCULATOR_VARIANTS, FIXTURE_VARIANTS } from '../visual-workloads.mjs';
 import { startCameraServer } from '../camera-server.mjs';
 import { pngFixture } from './png-fixture.mjs';
 
@@ -11,9 +11,10 @@ test('fixed Calculator grids are bounded and cannot repeat identities or escape 
   const batch = variants => ({ runs: variants.map(variant => ({ variant })) });
   for (const count of [1, 3, 4, 8, 16])
     assert.equal(batchVariants(batch(CALCULATOR_VARIANTS.slice(0, count))).length, count);
+  assert.equal(batchVariants(batch(SAMPLE_CALCULATOR_VARIANTS)).length, 16);
   assert.deepEqual(batchVariants(batch(FIXTURE_VARIANTS)), FIXTURE_VARIANTS);
   for (const variants of [[], [...CALCULATOR_VARIANTS, 'calculator-17'], ['calculator-00'], ['calculator-1'],
-    ['calculator-01', 'calculator-01'], ['calculator-01', 'light'], ['..\\calc.exe']])
+    ['calculator-01', 'calculator-01'], ['calculator-01', 'light'], ['..\\calc.exe'], ['sample-calculator-17']])
     assert.throws(() => batchVariants(batch(variants)), /Expected/);
 });
 

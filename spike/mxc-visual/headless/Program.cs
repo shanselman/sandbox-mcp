@@ -443,9 +443,12 @@ internal static class Program
                 start.Environment["SBX_VISUAL_OUTPUT"] = job.Output;
                 report["variant"] = job.Variant;
             }
-            app = (calculator ? CalculatorApp.Start() : Process.Start(start))
+            app = (calculator && !VisualWorkloads.IsSampleCalculator(job.Variant) ? CalculatorApp.Start() : Process.Start(start))
                 ?? throw new InvalidOperationException("App failed to start");
             report["appPid"] = app.Id;
+            var startup = Helper(job, "preview", "--pid", app.Id.ToString(), "--out", job.Output);
+            report["startup"] = startup;
+            if (startup.ExitCode != 0) throw new InvalidOperationException("Startup picture failed before automation readiness");
             if (job.Variant is not null)
             {
                 var ready = calculator

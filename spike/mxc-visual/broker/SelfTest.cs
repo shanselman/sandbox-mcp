@@ -131,6 +131,42 @@ internal static class SelfTest
                 if (assertions != 3) throw new Exception("Missing Calculator assertions");
             }
         });
+        Check("sample calculator executes every automated scenario with independent arithmetic", () =>
+        {
+            for (int index = 1; index <= VisualWorkloads.MaxSessions; index++)
+            {
+                var model = new HelloWinUI.CalculatorModel();
+                foreach (var step in VisualWorkloads.CalculatorSteps(index))
+                {
+                    model.Press(step.Button);
+                    if (step.Expected is not null && model.Display != step.Expected.Value.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                        throw new Exception($"Sample calculation {index} returned {model.Display}");
+                }
+                model.Press("num2Button");
+                if (model.Display != "2") throw new Exception("New entry appended to an old result");
+            }
+        });
+        Check("sample calculator subtraction, division and clear/error recovery", () =>
+        {
+            var model = new HelloWinUI.CalculatorModel();
+            foreach (string key in new[] { "num2Button", "minusButton", "num9Button", "equalButton" }) model.Press(key);
+            if (model.Display != "-7") throw new Exception("Negative result incorrect");
+            foreach (string key in new[] { "clearButton", "num9Button", "divideButton", "num2Button", "equalButton" }) model.Press(key);
+            if (model.Display != "4.5") throw new Exception("Fractional result incorrect");
+            foreach (string key in new[] { "clearButton", "num9Button", "divideButton", "num0Button" }) model.Press(key);
+            bool rejected = false;
+            try { model.Press("equalButton"); } catch (DivideByZeroException) { rejected = true; }
+            if (!rejected) throw new Exception("Division by zero accepted");
+            model.Press("clearButton");
+            if (model.Display != "0" || model.Expression != "") throw new Exception("Clear did not reset calculator state");
+        });
+        Check("sixteen fixed sample calculator workloads accepted", () =>
+        {
+            var samples = Enumerable.Range(1, 16).Select(index => new GridMember(index.ToString("x32"),
+                $"A{index}-B{index}", $"S-1-5-21-1-2-3-{1001 + index}", $"opaque{index}", $"sample-calculator-{index:D2}")).ToArray();
+            Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "run-grid", Members: samples), Protocol.Json));
+            Reject(() => Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(samples[0].AsRequest() with { Variant = "sample-calculator-17" }, Protocol.Json)));
+        });
         foreach (string input in new[] { @"..\broker\evil.exe", @"broker\..\evil.exe", @"C:\broker\evil.exe", @"broker\file:stream", @"broker\CON", @"broker\file.", @"broker\file ", @"broker\\file", "broker/file", @"unknown\file" })
             Check("reject package path " + input, () => Reject(() => Installer.ValidateRelativePath(input)));
         Check("valid package path", () => Installer.ValidateRelativePath(@"fixture\Assets\Logo.png"));

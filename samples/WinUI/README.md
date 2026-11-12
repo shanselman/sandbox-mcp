@@ -4,6 +4,21 @@ One window: name → greeting, plus a two-click counter. Automation IDs:
 `NameBox`, `GreetButton`, `Output`, `IncrementButton`, `Counter`.
 `test.ps1` uses the imported SbxUi module and `SBX_APP_PID`; run it only in the guest.
 
+The visual-farm spike also has an **unpackaged sample calculator**, selected by
+`SBX_VISUAL_VARIANT=sample-calculator-01` through `sample-calculator-16`.
+It is our sample, not the Windows Calculator package. The default greeting and
+counter remain unchanged. The calculator has stable `num0Button` through
+`num9Button`, `clearButton`, `plusButton`, `minusButton`, `multiplyButton`,
+`divideButton`, `equalButton` and `CalculatorResults` automation IDs. Its real
+decimal arithmetic and recent calculation history update through the same
+commands used by both human clicks and UI Automation.
+
+Use the [visual-farm instructions](../../spike/mxc-visual/README.md) to prepare
+and explicitly approve an isolated sample-calculator control. The spike supplies
+a fresh `SBX_VISUAL_OUTPUT` directory for measured appearance metadata. Odd/even
+sample numbers select light/dark appearance; actual DPI and rasterization scale
+are recorded, not simulated.
+
 ## Build (host, no app launch)
 
 Prerequisites: Windows x64; **.NET 10 SDK**; Visual Studio C++ x64 tools

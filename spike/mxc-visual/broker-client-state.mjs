@@ -71,6 +71,7 @@ export function requireDeprovisionReceipt(record) {
 }
 
 const evidenceFiles = [
+  'startup.png', 'startup.json',
   'worker.json', 'worker-started.json', 'job.json', 'authorization.json', 'fixture-settings.json', 'stream.json', 'live.json',
   'capture-ready.json', 'capture-started.json',
   ...Array.from({ length: 30 }, (_, i) => `frame-${String(i).padStart(3, '0')}.png`),

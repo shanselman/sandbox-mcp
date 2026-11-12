@@ -6,23 +6,24 @@ import { fileURLToPath } from 'node:url';
 import { atomicJson } from './broker-client-state.mjs';
 import { readBatch } from './live-evidence.mjs';
 import { capturePolicy, policyArguments, describePolicy, LEGACY_CAPTURE_POLICY } from './capture-policy.mjs';
-import { FIXTURE_VARIANTS, CALCULATOR_VARIANTS, batchVariants } from './visual-workloads.mjs';
+import { FIXTURE_VARIANTS, CALCULATOR_VARIANTS, SAMPLE_CALCULATOR_VARIANTS, batchVariants } from './visual-workloads.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const options = policyArguments(process.argv.slice(2));
 const prepare = options.args[0] === '--prepare';
-const calculatorCount = prepare && options.args[2] === '--calculator' ? Number(options.args[3]) : null;
+const sampleCalculator = options.args[2] === '--sample-calculator';
+const calculatorCount = prepare && (sampleCalculator || options.args[2] === '--calculator') ? Number(options.args[3]) : null;
 const root = path.resolve(prepare ? options.args[1] ?? '' : options.args[0] ?? '');
 if ((!prepare && (options.args.length !== 1 || options.explicit))
   || (prepare && !(options.args.length === 2 || options.args.length === 4 && Number.isInteger(calculatorCount) && calculatorCount >= 1 && calculatorCount <= 16)))
-  throw new Error('Expected --prepare <new-batch-directory> [--calculator <1..16>] [--policy <JSON-file>], or <prepared-directory> (uses its saved policy)');
+  throw new Error('Expected --prepare <new-batch-directory> [--calculator <1..16> | --sample-calculator <1..16>] [--policy <JSON-file>], or <prepared-directory> (uses its saved policy)');
 const batchFile = path.join(root, 'batch.json');
 if (prepare) {
   if (fs.existsSync(root)) throw new Error('Use a new batch directory');
   fs.mkdirSync(root, { recursive: true });
   atomicJson(batchFile, { schema: 1, startedAt: new Date().toISOString(), mode: 'concurrent', targetFps: 1,
-    capturePolicy: options.policy, runs: (calculatorCount ? CALCULATOR_VARIANTS.slice(0, calculatorCount) : FIXTURE_VARIANTS)
-      .map(variant => ({ variant, ...(calculatorCount ? { name: `Calculator ${Number(variant.slice(-2))}` } : {}), state: 'pending' })) });
+    capturePolicy: options.policy, runs: (calculatorCount ? (sampleCalculator ? SAMPLE_CALCULATOR_VARIANTS : CALCULATOR_VARIANTS).slice(0, calculatorCount) : FIXTURE_VARIANTS)
+      .map(variant => ({ variant, ...(calculatorCount ? { name: `${sampleCalculator ? 'Sample calculator' : 'Windows Calculator'} ${Number(variant.slice(-2))}` } : {}), state: 'pending' })) });
   console.log(JSON.stringify({ root, prepared: true }));
 } else {
   const batch = readBatch(root);

@@ -361,7 +361,44 @@ layouts/replay do not establish native capacity or make failed batches pass.
 
 ### Calculator automation and bounded stress grids
 
-The fixed Calculator workload activates
+Two different applications are deliberately kept separate:
+
+- `--calculator N`: the installed Windows Calculator package; its UIA startup
+  remains blocked in the controls documented below.
+- `--sample-calculator N`: our unpackaged WinUI calculator in the existing
+  fixture, with visible calculations, history and stable automation IDs.
+  Canvas/app titles explicitly say **Sample calculator**.
+
+```powershell
+node variant-run.mjs --prepare evidence\sample-calculator-one --sample-calculator 1
+# Open this prepared batch in the camera canvas before the approved run.
+node variant-run.mjs evidence\sample-calculator-one
+```
+
+Preparing a sample batch is not permission to run it. Prove one session before
+seeking approval for a higher-concurrency stage; success of our sample does not
+establish that the Windows Calculator package works.
+
+**Sample control, November 12 UTC: passed.** One owned Full session showed
+`11 + 8 = 19`, `21 x 3 = 63`, and `101 - 1 = 100`, with all three results
+independently checked through UIA. All 30 stream PNGs were validated and
+collected (29 distinct images), at 1.006 fps with a 1,034 ms maximum gap.
+Readiness took one probe. The canvas was observed displaying the startup
+picture before the stream, advancing live frames, and then looping the
+29.819-second recording without playback errors. The very first startup
+picture was an empty window before WinUI's first paint; subsequent captured
+frames showed the complete calculator and history.
+
+The helper exited 0; the original session/account/profile were removed, the
+broker pending queue was empty, and no relevant Application Error or reboot
+was observed. One unloaded companion profile remained (193 -> 194). Candidate
+`A2D4DC33F70AAFDB10C67C568FE57907B1CA8CDDAB5A872265C92D52FCDF5349`
+includes the unpackaged x64 sample under emulation on this ARM64 host.
+This was one control, not a sixteen-session qualification. It disproves a
+blanket inability to automate/capture apps here, but does not identify or fix
+the Windows Calculator package's window/provider problem.
+
+The Windows Calculator workload activates
 `Microsoft.WindowsCalculator_8wekyb3d8bbwe!App` (the app launched by `calc.exe`)
 **as the owned agent**, never as System. The app must be installed and available
 in the new agent profile; an activation or UI Automation failure fails the run.
@@ -391,7 +428,7 @@ Stop at the first failed stage, inadequate memory headroom, crash or uncertain
 cleanup. A full successful ramp creates 32 account lifecycles and may retain
 32 companion profiles; it does not authorize deleting them.
 
-**Current qualification (November 12 UTC): blocked at the single-session
+**Windows Calculator qualification (November 12 UTC): blocked at the single-session
 control.** Calculator activation returned a process in the owned Full session,
 but the initial UIA lookup threw `ElementNotAvailableException`. After an
 explicitly approved retry with bounded handling of that transient exception,
@@ -403,8 +440,8 @@ established; do not describe the transient-retry change as a runtime fix.
 The ramp stopped: **no 3-, 4-, 8- or 16-Calculator stage ran**. Both original
 accounts/sessions were removed, the broker pending queue was empty, the host
 boot time was unchanged, and no relevant Application Error event was found.
-Two unloaded companion profiles remained (191 -> 193). The installed retry
-candidate is `9B3AE69BC29F9E2C576720831DA22B3A4A84794AEB279C81F34B9E1E2704FE70`.
+Two unloaded companion profiles remained (191 -> 193). That retry used
+candidate `9B3AE69BC29F9E2C576720831DA22B3A4A84794AEB279C81F34B9E1E2704FE70`.
 Its 122 broker checks and three isolated helper-readiness checks passed, as
 did 69 spike Node checks and 13 file-only packaging checks. These establish
 offline behavior only, not usable Calculator automation or sixteen-session
@@ -412,6 +449,13 @@ native capacity. Preserve the failed controls and resolve Calculator UIA
 readiness before seeking approval for another native attempt.
 
 ### Live cameras and looping recordings
+
+The worker publishes a validated `startup.png` and `startup.json` **before**
+requesting UI Automation readiness. The canvas labels this **PREPARING / startup
+image**; it is not included in the measured 30-frame stream or FPS/overlap
+verdict. If readiness fails, the startup picture remains on the failed tile.
+Its helper report also records the target process's window titles, classes and
+handles, rather than leaving a failed startup with no visual evidence.
 
 Live tiles still update from the validated PNGs as capture happens; no extra
 encoder runs inside the agent sessions. Once capture finishes, the viewer

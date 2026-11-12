@@ -39,6 +39,7 @@ static class Program
             {
                 case "windows": report["windows"] = ListWindows(null); break;
                 case "capture": Capture(opts, report); break;
+                case "preview": Preview(opts, report); break;
                 case "uia": Uia(opts, report); break;
                 case "stream": Stream(opts, report); break;
                 case "calculator-ready": CalculatorReady(opts, report); break;
@@ -262,7 +263,7 @@ static class Program
         report["failedFrames"] = failures;
         if (calculator > 0)
         {
-            report["workload"] = "calculator";
+            report["workload"] = VisualWorkloads.IsSampleCalculator(options.GetValueOrDefault("variant")) ? "calculator-sample" : "calculator";
             report["automationChecks"] = automationChecks;
             if (automationChecks.Count != 3) failures++;
         }
@@ -341,6 +342,12 @@ static class Program
         report["clear"] = CalculatorStep(root, new("clearButton", 0));
         report["pid"] = pid;
         report["calculatorReady"] = true;
+        if (VisualWorkloads.IsSampleCalculator(variant))
+        {
+            if (!File.Exists(Path.Combine(options["out"], "fixture-settings.json")))
+                throw new InvalidOperationException("Sample calculator has not published its measured settings");
+            return;
+        }
         var settings = new { variant, workload = "calculator", application = "Microsoft.WindowsCalculator",
             theme = "System (unmeasured)", actualWindowDpi = GetDpiForWindow(MainWindow(pid, 1000)),
             rasterizationScale = (double?)null, fixtureLayoutScale = 1, dpiWasChanged = false, scaleIsSimulation = false };
@@ -357,6 +364,35 @@ static class Program
         report["assertion"] = CalculatorStep(root, new("equalButton", 15));
         report["pid"] = pid;
         report["calculatorVerified"] = true;
+    }
+
+    static void Preview(Dictionary<string, string> options, Dictionary<string, object?> report)
+    {
+        int pid = ResolvePid(options);
+        using var target = Process.GetProcessById(pid);
+        if (target.SessionId != Process.GetCurrentProcess().SessionId)
+            throw new UnauthorizedAccessException("Preview target is outside the helper session");
+        var timer = Stopwatch.StartNew();
+        var hwnd = MainWindow(pid, 20000);
+        report["windows"] = ListWindows(pid);
+        if (hwnd == IntPtr.Zero) throw new InvalidOperationException("No visible app window for startup picture");
+        if (!GetWindowRect(hwnd, out var rect)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        int width = rect.R - rect.L, height = rect.B - rect.T;
+        if (width <= 0 || height <= 0 || (long)width * height > 16000000) throw new InvalidOperationException("Invalid startup picture dimensions");
+        using var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(bitmap))
+        {
+            var dc = graphics.GetHdc();
+            try { if (!PrintWindow(hwnd, dc, 2)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Startup PrintWindow"); }
+            finally { graphics.ReleaseHdc(dc); }
+        }
+        EvidencePublication.PublishNew(Path.Combine(options["out"], "startup.png"), stream => bitmap.Save(stream, ImageFormat.Png));
+        long elapsed = timer.ElapsedMilliseconds;
+        var preview = new { kind = "startup", at = DateTimeOffset.UtcNow, file = "startup.png",
+            sessionId = target.SessionId, pid, width, height, actualWindowDpi = GetDpiForWindow(hwnd),
+            captureMs = elapsed, elapsedMs = elapsed, hwnd = $"0x{hwnd:X}" };
+        report["preview"] = preview;
+        EvidencePublication.PublishNew(Path.Combine(options["out"], "startup.json"), stream => JsonSerializer.Serialize(stream, preview));
     }
 
     static void WriteLive(string output, int sequence, object frame)
