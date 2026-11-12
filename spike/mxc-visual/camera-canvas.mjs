@@ -20,7 +20,7 @@ export function cameraCanvasOptions(evidenceRoot = evidence) {
   return {
     id: 'camera-grid',
     displayName: 'Agent Camera Grid',
-    description: 'View headless-session image evidence with the Copilot theme, compact tiles and zoom; never creates sessions.',
+    description: 'Watch live headless-session frames and looping recorded videos with the Copilot theme; never creates sessions.',
     inputSchema: { type: 'object', properties: { batch: { type: 'string', minLength: 1 } }, required: ['batch'], additionalProperties: false },
     actions: [{
       name: 'get_state',
@@ -34,13 +34,13 @@ export function cameraCanvasOptions(evidenceRoot = evidence) {
       },
     }, {
       name: 'get_view',
-      description: 'Read the renderer-reported public theme tokens and page activity, without inspecting other app content.',
+      description: 'Read renderer-reported theme, video playback and page activity, without inspecting other app content.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       handler: async ctx => {
         const entry = entries.get(ctx.instanceId);
         if (!entry) throw new Error('Camera grid instance is not open');
         const viewer = await entry.server;
-        return { appearance: viewer.appearance() ?? null, requests: viewer.requests() };
+        return { appearance: viewer.appearance() ?? null, playback: viewer.playback() ?? null, requests: viewer.requests() };
       },
     }],
     open: async ctx => {

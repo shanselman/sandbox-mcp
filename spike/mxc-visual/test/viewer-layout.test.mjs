@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import fs from 'node:fs';
@@ -8,7 +8,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
-import { CAMERA_CSP } from '../camera-server.mjs';
+import { CAMERA_CSP, startCameraServer } from '../camera-server.mjs';
+import { pngFixture } from './png-fixture.mjs';
 
 const viewer = fileURLToPath(new URL('../viewer/', import.meta.url));
 const script = fs.readFileSync(path.join(viewer, 'grid.js'), 'utf8');
@@ -18,6 +19,7 @@ class Element {
     this.tagName = tagName;
     this.children = [];
     this.dataset = {};
+    this.listeners = {};
     this.style = { setProperty: (key, value) => { this.style[key] = String(value); } };
   }
   set innerHTML(_) { throw new Error('Agent names must never be rendered as HTML'); }
@@ -33,7 +35,10 @@ class Element {
     this.parent = null;
   }
   removeAttribute(name) { delete this[name]; }
-  addEventListener(name, callback) { this[name] = callback; }
+  addEventListener(name, callback) { this.listeners[name] = callback; if (name !== 'error') this[name] = callback; }
+  load() { this.loads = (this.loads ?? 0) + 1; }
+  pause() { this.paused = true; }
+  play() { this.paused = false; return Promise.resolve(); }
 }
 
 function harness() {
@@ -174,6 +179,59 @@ test('a withdrawn or excluded frame is not left visible as current evidence', ()
   assert.equal(placeholder.hidden, true);
 });
 
+test('live frames switch to one persistent looping video without polling restarting playback', () => {
+  const { context, tiles } = harness();
+  const state = batch(1);
+  context.renderBatch(state);
+  const [image, , video] = tiles()[0].children[1].children;
+  state.runs[0].image = 'next.png';
+  context.renderBatch(state);
+  assert.equal(image.src, 'next.png');
+  state.runs[0].state = 'passed';
+  state.runs[0].recording = { state: 'ready', url: 'light/recording-test.mp4' };
+  context.renderBatch(state);
+  video.readyState = 4;
+  video.loadeddata();
+  video.currentTime = 8.5;
+  context.renderBatch(state);
+  context.renderBatch(state);
+  assert.equal(video.loads, 1);
+  assert.equal(video.currentTime, 8.5);
+  assert.equal(video.loop, true);
+  assert.equal(video.muted, true);
+  assert.equal(video.controls, true);
+  assert.equal(video.hidden, false);
+  assert.equal(image.hidden, true);
+  assert.equal(tiles()[0].children[0].children[1].textContent, 'RECORDED · loop');
+  state.runs[0].state = 'failed';
+  state.runs[0].error = 'Original run failed';
+  context.renderBatch(state);
+  assert.equal(tiles()[0].children[0].children[1].textContent, 'FAILED · recorded loop');
+  assert.match(tiles()[0].children[3].textContent, /Original run failed/);
+  context.renderBatch(batch(0));
+  assert.equal(video.paused, true);
+  assert.equal(video.src, undefined);
+});
+
+test('encoding and playback errors keep the captured image and explain the failure', () => {
+  const { context, tiles } = harness();
+  const state = batch(1);
+  state.runs[0].state = 'complete';
+  state.runs[0].recording = { state: 'error', error: 'FFmpeg is missing' };
+  context.renderBatch(state);
+  const [image, , video] = tiles()[0].children[1].children;
+  assert.equal(image.hidden, false);
+  assert.match(tiles()[0].children[4].textContent, /FFmpeg is missing/);
+  state.runs[0].recording = { state: 'ready', url: 'light/recording-test.mp4' };
+  context.renderBatch(state);
+  video.error = { code: 4 };
+  video.listeners.error();
+  context.renderBatch(state);
+  assert.equal(image.hidden, false);
+  assert.equal(video.hidden, true);
+  assert.match(tiles()[0].children[4].textContent, /media error 4/);
+});
+
 const browserPath = process.env.VIEWER_TEST_BROWSER ?? [
   process.env['ProgramFiles(x86)'] && path.join(process.env['ProgramFiles(x86)'], 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
   process.env.ProgramFiles && path.join(process.env.ProgramFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
@@ -224,6 +282,10 @@ test('real browser: 4/8/16 tiles, narrow viewports, token and system theme prece
       response.setHeader('content-type', 'image/svg+xml');
       response.end('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect width="640" height="480" fill="#8090a0"/><text x="20" y="60">SYNTHETIC LAYOUT TEST</text></svg>');
     } else if (request.url === '/appearance' && request.method === 'POST') {
+      request.resume();
+      response.setHeader('content-type', 'application/json');
+      response.end('{"ok":true}');
+    } else if (request.url === '/playback' && request.method === 'POST') {
       request.resume();
       response.setHeader('content-type', 'application/json');
       response.end('{"ok":true}');
@@ -410,4 +472,76 @@ test('real browser: 4/8/16 tiles, narrow viewports, token and system theme prece
     document.head.append(inline);
   })()`);
   assert.equal(await evaluate('window.inlineScriptUnexpectedlyRan === true'), false, 'inline scripts remain blocked');
+
+  await t.test('real video: live-to-recorded transition, autoplay, loops, polling and pause', {
+    skip: spawnSync('ffmpeg', ['-version'], { windowsHide: true }).status !== 0 && 'FFmpeg is required for real video verification',
+  }, async () => {
+    const root = path.join(profile, 'camera-video');
+    const directory = path.join(root, 'light');
+    fs.mkdirSync(directory, { recursive: true });
+    const start = Date.now() - 650;
+    const frames = [0, 200, 650].map((time, sequence) => {
+      const frame = { sequence, file: `frame-00${sequence}.png`, at: new Date(start + time).toISOString(),
+        elapsedMs: time + 10, captureMs: 10, sessionId: 20, pid: 40, width: 320, height: 240, actualWindowDpi: 96 };
+      fs.writeFileSync(path.join(directory, frame.file), pngFixture(sequence * 80, 320, 240));
+      return frame;
+    });
+    fs.writeFileSync(path.join(directory, 'observed-frames.json'), JSON.stringify(frames));
+    fs.writeFileSync(path.join(directory, 'progress.json'), JSON.stringify({ state: 'live', frame: frames.at(-1) }));
+    const source = { schema: 1, mode: 'concurrent', state: 'running', runs: [
+      { variant: 'light', name: 'Synthetic video test', state: 'running', sessionId: 20 },
+    ] };
+    fs.writeFileSync(path.join(root, 'batch.json'), JSON.stringify(source));
+    const camera = await startCameraServer(root);
+    t.after(() => camera.close());
+    await browser.send('Page.navigate', { url: camera.url });
+    for (let attempt = 0; ; attempt++) {
+      if (await evaluate(`location.href === ${JSON.stringify(camera.url)} && document.querySelectorAll('article').length === 1`)) break;
+      assert.ok(attempt < 50, 'real camera server becomes visible');
+      await delay(100);
+    }
+    await evaluate(`window.videoStarts = 0;
+      document.querySelector('video').addEventListener('loadstart', () => window.videoStarts++);`);
+    assert.equal(await evaluate('document.querySelector("img").hidden'), false);
+    fs.writeFileSync(path.join(root, 'batch-finished.json'), JSON.stringify({
+      ...source, state: 'passed', completedAt: new Date().toISOString(),
+      runs: [{ ...source.runs[0], state: 'passed' }],
+    }));
+    for (let attempt = 0; ; attempt++) {
+      if (await evaluate('document.querySelector("video").readyState >= 2 && !document.querySelector("video").paused')) break;
+      assert.ok(attempt < 50, JSON.stringify(await evaluate(`({ error: document.querySelector('video').error?.code,
+        note: document.querySelector('.playback-note').textContent })`)));
+      await delay(100);
+    }
+    for (let attempt = 0; ; attempt++) {
+      if (await evaluate('[...cards.values()][0].loops >= 2')) break;
+      assert.ok(attempt < 100, 'recorded video wraps twice within ten seconds');
+      await delay(100);
+    }
+    const playback = await evaluate(`(() => {
+      const tile = [...cards.values()][0], video = tile.video;
+      return { starts: window.videoStarts, time: video.currentTime, duration: video.duration,
+        loops: tile.loops, paused: video.paused, hidden: video.hidden, imageHidden: tile.image.hidden,
+        loop: video.loop, muted: video.muted, controls: video.controls, badge: tile.badge.textContent };
+    })()`);
+    assert.equal(playback.starts, 1, 'state polling does not reload the video');
+    assert.ok(playback.loops >= 2, JSON.stringify(playback));
+    assert.ok(playback.time > 0 && playback.time < playback.duration);
+    assert.equal(playback.paused, false);
+    assert.equal(playback.hidden, false);
+    assert.equal(playback.imageHidden, true);
+    assert.equal(playback.loop, true);
+    assert.equal(playback.muted, true);
+    assert.equal(playback.controls, true);
+    assert.equal(playback.badge, 'RECORDED · loop');
+    await evaluate('document.querySelector("video").pause(); document.querySelector("video").currentTime = 0.4');
+    await delay(1300);
+    assert.equal(await evaluate('document.querySelector("video").paused'), true, 'polling respects a user pause');
+    const pausedAt = await evaluate('document.querySelector("video").currentTime');
+    assert.ok(Math.abs(pausedAt - 0.4) < 0.02, `Paused seek position: ${pausedAt}`);
+    if (process.env.VIEWER_TEST_SCREENSHOT) {
+      const screenshot = await browser.send('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(process.env.VIEWER_TEST_SCREENSHOT, Buffer.from(screenshot.data, 'base64'));
+    }
+  });
 });

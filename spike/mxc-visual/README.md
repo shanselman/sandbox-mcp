@@ -358,6 +358,30 @@ coverage, but have **no hard maximum-frame-gap cutoff**. Long gaps remain
 visible timing warnings, not silently discarded measurements. Larger viewer
 layouts/replay do not establish native capacity or make failed batches pass.
 
+### Live cameras and looping recordings
+
+Live tiles still update from the validated PNGs as capture happens; no extra
+encoder runs inside the agent sessions. Once capture finishes, the viewer
+uses **FFmpeg on the host's PATH** to create a muted H.264 MP4 per tile, then
+automatically switches to looping **RECORDED** playback. Controls allow pause
+and seeking; polling never resets playback or overrides a user pause.
+Reduced-motion preferences disable autoplay.
+
+The viewer derives each frame's duration from its capture timestamp, retaining
+long gaps rather than speeding them up. The last image is held for one second.
+These are videos of the original approximately 1fps evidence, not newly
+captured or interpolated high-frame-rate footage. Encoding is serialized and
+bounded; it never creates native sessions or changes the broker.
+
+`recording-<source-fingerprint>.mp4` and `recording.json` are saved beside the
+per-camera PNGs. Reopening the batch reuses the recording after checking source
+and video hashes. Source images/reports remain unchanged. Failed or partial
+runs keep their failed labels and warnings even when their valid captured
+frames can be played. Encoding/playback errors remain visible, with the last
+image retained; a missing FFmpeg installation does not prevent live viewing.
+The existing offline failed-source replay retains its provenance and switches
+to a loop only after its original replay interval ends.
+
 ### Capture timing policy
 
 The coordinated installed-worker path now initializes workers sequentially.
