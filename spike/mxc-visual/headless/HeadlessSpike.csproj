@@ -10,5 +10,6 @@
     <Compile Include="..\CaptureRunLimits.cs" Link="CaptureRunLimits.cs" />
     <Compile Include="..\VisualWorkloads.cs" Link="VisualWorkloads.cs" />
     <Compile Include="..\StreamHelperRunner.cs" Link="StreamHelperRunner.cs" />
+    <Compile Include="..\BoundedHelperRunner.cs" Link="BoundedHelperRunner.cs" />
   </ItemGroup>
 </Project>

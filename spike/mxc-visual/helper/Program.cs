@@ -20,21 +20,30 @@ static class Program
     {
         if (args is ["calculator-readiness-selftest"]) return CalculatorReadinessTests.Run();
         var opts = ParseArgs(args.Skip(1).ToArray());
+        Trace("helper.enter", new { operation = args.FirstOrDefault() });
         var report = new Dictionary<string, object?>
         {
             ["at"] = DateTime.UtcNow.ToString("o"),
             ["user"] = Environment.UserName,
             ["sessionId"] = Process.GetCurrentProcess().SessionId,
-            ["interactive"] = Environment.UserInteractive,
-            ["screen"] = $"{GetSystemMetrics(0)}x{GetSystemMetrics(1)}",
-            ["virtualScreen"] = $"{GetSystemMetrics(78)}x{GetSystemMetrics(79)}",
-            ["inputDesktop"] = InputDesktopName(),
-            ["dwmCompositionEnabled"] = DwmIsCompositionEnabled(out var dwmOn) == 0 ? dwmOn : null,
-            ["dwmInSession"] = Process.GetProcessesByName("dwm").Any(p => p.SessionId == Process.GetCurrentProcess().SessionId),
-            ["wgcSupported"] = TryOr(() => Windows.Graphics.Capture.GraphicsCaptureSession.IsSupported()),
+            ["interactive"] = Environment.UserInteractive
         };
         try
         {
+            Trace("diagnostics.display");
+            report["screen"] = $"{GetSystemMetrics(0)}x{GetSystemMetrics(1)}";
+            report["virtualScreen"] = $"{GetSystemMetrics(78)}x{GetSystemMetrics(79)}";
+            Trace("diagnostics.input-desktop");
+            report["inputDesktop"] = InputDesktopName();
+            Trace("diagnostics.dwm");
+            report["dwmCompositionEnabled"] = DwmIsCompositionEnabled(out var dwmOn) == 0 ? dwmOn : null;
+            Trace("diagnostics.process-enumeration");
+            var processes = Process.GetProcessesByName("dwm");
+            try { report["dwmInSession"] = processes.Any(p => p.SessionId == Process.GetCurrentProcess().SessionId); }
+            finally { foreach (var process in processes) process.Dispose(); }
+            Trace("diagnostics.wgc-support");
+            report["wgcSupported"] = TryOr(() => Windows.Graphics.Capture.GraphicsCaptureSession.IsSupported());
+            Trace("operation.begin", new { operation = args.FirstOrDefault() });
             switch (args.FirstOrDefault())
             {
                 case "windows": report["windows"] = ListWindows(null); break;
@@ -48,6 +57,7 @@ static class Program
             }
         }
         catch (Exception e) { report["error"] = e.ToString(); }
+        Trace("operation.end", new { failed = report.ContainsKey("error") });
         if (opts.GetValueOrDefault("coordinated") == "true")
         {
             Console.WriteLine(JsonSerializer.Serialize(new { phase = report.ContainsKey("error") ? "error" : "complete", report }));
@@ -55,6 +65,12 @@ static class Program
         }
         else Console.WriteLine(JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
         return report.ContainsKey("error") ? 1 : 0;
+    }
+
+    static void Trace(string phase, object? detail = null)
+    {
+        Console.Error.WriteLine(JsonSerializer.Serialize(new { at = DateTimeOffset.UtcNow, phase, detail }));
+        Console.Error.Flush();
     }
 
     static Dictionary<string, string> ParseArgs(string[] a)
@@ -368,31 +384,39 @@ static class Program
 
     static void Preview(Dictionary<string, string> options, Dictionary<string, object?> report)
     {
+        Trace("preview.resolve-target");
         int pid = ResolvePid(options);
         using var target = Process.GetProcessById(pid);
         if (target.SessionId != Process.GetCurrentProcess().SessionId)
             throw new UnauthorizedAccessException("Preview target is outside the helper session");
         var timer = Stopwatch.StartNew();
+        Trace("preview.find-window", new { pid });
         var hwnd = MainWindow(pid, 20000);
+        Trace("preview.enumerate-windows", new { pid, hwnd = $"0x{hwnd:X}" });
         report["windows"] = ListWindows(pid);
         if (hwnd == IntPtr.Zero) throw new InvalidOperationException("No visible app window for startup picture");
         if (!GetWindowRect(hwnd, out var rect)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
         int width = rect.R - rect.L, height = rect.B - rect.T;
         if (width <= 0 || height <= 0 || (long)width * height > 16000000) throw new InvalidOperationException("Invalid startup picture dimensions");
+        Trace("preview.allocate-bitmap", new { width, height });
         using var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
         using (var graphics = Graphics.FromImage(bitmap))
         {
             var dc = graphics.GetHdc();
+            Trace("preview.printwindow", new { pid, hwnd = $"0x{hwnd:X}", width, height });
             try { if (!PrintWindow(hwnd, dc, 2)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Startup PrintWindow"); }
             finally { graphics.ReleaseHdc(dc); }
         }
+        Trace("preview.publish-image");
         EvidencePublication.PublishNew(Path.Combine(options["out"], "startup.png"), stream => bitmap.Save(stream, ImageFormat.Png));
         long elapsed = timer.ElapsedMilliseconds;
         var preview = new { kind = "startup", at = DateTimeOffset.UtcNow, file = "startup.png",
             sessionId = target.SessionId, pid, width, height, actualWindowDpi = GetDpiForWindow(hwnd),
             captureMs = elapsed, elapsedMs = elapsed, hwnd = $"0x{hwnd:X}" };
         report["preview"] = preview;
+        Trace("preview.publish-metadata");
         EvidencePublication.PublishNew(Path.Combine(options["out"], "startup.json"), stream => JsonSerializer.Serialize(stream, preview));
+        Trace("preview.complete");
     }
 
     static void WriteLive(string output, int sequence, object frame)

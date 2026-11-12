@@ -92,7 +92,8 @@ internal static class StreamHelperRunner
                 try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromMilliseconds(budgets.ExitMs)); }
                 catch (TimeoutException) { diagnostics["terminationPending"] = true; }
             }
-            if (stderr.IsCompletedSuccessfully) diagnostics["stderr"] = stderr.Result;
+            try { diagnostics["stderr"] = await stderr.WaitAsync(TimeSpan.FromMilliseconds(budgets.ExitMs)); }
+            catch (Exception drainError) { diagnostics["stderrDrainError"] = drainError.Message; }
             throw new InvalidOperationException($"Stream helper failed during {diagnostics["phase"]}: {error.Message}", error);
         }
     }

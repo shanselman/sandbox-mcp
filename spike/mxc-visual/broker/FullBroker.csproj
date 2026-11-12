@@ -15,5 +15,6 @@
     <Compile Include="..\VisualWorkloads.cs" Link="VisualWorkloads.cs" />
     <Compile Include="..\..\..\samples\WinUI\CalculatorModel.cs" Link="CalculatorModel.cs" />
     <Compile Include="..\StreamHelperRunner.cs" Link="StreamHelperRunner.cs" />
+    <Compile Include="..\BoundedHelperRunner.cs" Link="BoundedHelperRunner.cs" />
   </ItemGroup>
 </Project>

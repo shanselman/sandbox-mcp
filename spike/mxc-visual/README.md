@@ -439,6 +439,64 @@ Resolve the loaded-profile uncertainty and obtain approval before another
 native control; a low-concurrency 125% control would separate scaling from the
 sixteen-session condition.
 
+#### Retained-evidence debugging of the sixteen-session failure
+
+The matching public `dwmcorei.pdb` resolves offset `0xae65` to
+`MilFailFastForHR+5`. The corresponding DLL bytes are `mov ecx,7; int 29h`:
+an explicit `FAST_FAIL_FATAL_APP_EXIT`, not evidence of a stack-buffer overrun.
+This generic failure routine does **not** reveal its caller or the original
+HRESULT. No matching retained crash dump was found in the inspected WER
+archive, queue, temporary or failed companion-profile locations. The original
+worker's failed preview also did not preserve partial helper output, so the
+blocked operation cannot be reconstructed from its timeout alone.
+
+A retained WER process CSV captured immediately before the failure shows the
+cost of **Full desktop sessions**, not just the three launched calculators:
+
+| Metric across the sixteen test sessions | Snapshot value |
+|---|---:|
+| Processes | 860 |
+| Threads | 17,950 |
+| Private working set | 9.23 GiB |
+| Private committed memory | 17.10 GiB |
+| Edge / WebView processes | 138 / 81 |
+| Explorer / DWM processes | 16 / 16 |
+
+This is one point-in-time process snapshot, not a peak, CPU-utilization trace
+or graphics-memory measurement. Summing ordinary working sets double-counts
+shared pages; it must not be reported as unique physical RAM use. The later
+12.75-GiB free-memory sample does not establish free memory at the fault.
+Startup load is a concrete suspect despite available RAM, but neither a
+graphics resource limit nor scaling as the cause has been proved.
+
+The loaded original/companion profile pair remained loaded hours after
+teardown. An approved read-only elevated scan found no surviving process in
+the old test sessions or with either SID as its primary token (513 readable
+tokens; one protected-token read was denied). Exact Handle queries found
+three companion-account token handles in the Microsoft-signed **EPM service**
+and two original-profile Cryptnet-cache directory handles in **Cryptographic
+Services**. SearchIndexer references were to HKLM search-registration keys,
+not the user's loaded hive. Retained service references are evidence worth
+investigating, not proof that any one handle prevents hive unload. No handles
+were closed, services stopped, profiles deleted or deprovision calls replayed.
+
+The source now emits flushed helper phase markers before display diagnostics,
+process enumeration, the WGC support probe, window selection, `PrintWindow`
+and PNG publication. `worker.json` retains each helper's PID, phase and output,
+including on timeout. Subprocess execution deadlines are unchanged; output
+draining is bounded and does not turn a nonzero exit/timeout into success.
+The 128 broker checks include real synthetic success, error and stalled-helper
+processes and passed three times; all three components build, and the three
+helper readiness checks pass. These changes are **not installed or validated
+in a new native run**.
+
+Before another control, preserve this evidence and deliberately resolve the
+stale-profile state (a user-controlled reboot followed by a fresh audit is
+preferable to forcibly closing service handles). After separate approval and
+installing the diagnostic candidate, one 125% sample session can isolate the
+scaling path. Only then consider eight sessions with the same workload matrix;
+eight reduces startup load but is not yet a demonstrated capacity.
+
 The Windows Calculator workload activates
 `Microsoft.WindowsCalculator_8wekyb3d8bbwe!App` (the app launched by `calc.exe`)
 **as the owned agent**, never as System. The app must be installed and available

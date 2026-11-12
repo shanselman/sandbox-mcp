@@ -402,21 +402,20 @@ internal static class Program
         }
     }
 
-    private static HelperResult Helper(Job job, params string[] arguments)
+    private static HelperResult Helper(Job job, Dictionary<string, object?> report, params string[] arguments)
     {
         var start = new ProcessStartInfo(job.Helper) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (string argument in arguments) start.ArgumentList.Add(argument);
-        using var process = Process.Start(start) ?? throw new InvalidOperationException("Helper failed to start");
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
-        int timeout = arguments.FirstOrDefault() == "stream" ? 45000 : 30000;
-        if (!process.WaitForExit(timeout))
+        if (!report.TryGetValue("helperRuns", out var value) || value is not List<Dictionary<string, object?>> helpers)
         {
-            process.Kill(entireProcessTree: true);
-            bool exited = process.WaitForExit(CaptureRunLimits.ExitMs);
-            throw new TimeoutException($"Owned helper {arguments.FirstOrDefault()} exceeded {timeout} milliseconds; termination confirmed={exited}");
+            helpers = [];
+            report["helperRuns"] = helpers;
         }
-        return new(process.ExitCode, stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
+        var diagnostics = new Dictionary<string, object?> { ["operation"] = arguments.FirstOrDefault() };
+        helpers.Add(diagnostics);
+        var result = BoundedHelperRunner.Run(start, arguments.FirstOrDefault() == "stream" ? 45000 : 30000,
+            CaptureRunLimits.ExitMs, diagnostics).GetAwaiter().GetResult();
+        return new(result.ExitCode, result.Stdout, result.Stderr);
     }
 
     private static int Worker(string jobPath)
@@ -446,14 +445,14 @@ internal static class Program
             app = (calculator && !VisualWorkloads.IsSampleCalculator(job.Variant) ? CalculatorApp.Start() : Process.Start(start))
                 ?? throw new InvalidOperationException("App failed to start");
             report["appPid"] = app.Id;
-            var startup = Helper(job, "preview", "--pid", app.Id.ToString(), "--out", job.Output);
+            var startup = Helper(job, report, "preview", "--pid", app.Id.ToString(), "--out", job.Output);
             report["startup"] = startup;
             if (startup.ExitCode != 0) throw new InvalidOperationException("Startup picture failed before automation readiness");
             if (job.Variant is not null)
             {
                 var ready = calculator
-                    ? Helper(job, "calculator-ready", "--pid", app.Id.ToString(), "--out", job.Output, "--variant", job.Variant)
-                    : Helper(job, "uia", "--pid", app.Id.ToString());
+                    ? Helper(job, report, "calculator-ready", "--pid", app.Id.ToString(), "--out", job.Output, "--variant", job.Variant)
+                    : Helper(job, report, "uia", "--pid", app.Id.ToString());
                 report["readiness"] = ready;
                 if (ready.ExitCode != 0) throw new InvalidOperationException("WinUI readiness inspection failed");
                 using var observed = JsonDocument.Parse(ready.Stdout);
@@ -461,13 +460,13 @@ internal static class Program
                     : !observed.RootElement.GetProperty("uiaIds").EnumerateArray().Any(item => item.GetString() == "ControlType.Text:Counter:Count: 0"))
                     throw new InvalidOperationException("Initial counter was not ready before the baseline capture");
             }
-            var before = Helper(job, "capture", "--pid", app.Id.ToString(), "--out", job.Output, "--label", "1-before");
+            var before = Helper(job, report, "capture", "--pid", app.Id.ToString(), "--out", job.Output, "--label", "1-before");
             report["before"] = before;
-            var uia = calculator ? Helper(job, "calculator-probe", "--pid", app.Id.ToString())
-                : Helper(job, "uia", "--pid", app.Id.ToString(), "--set", "NameBox=FullSession",
+            var uia = calculator ? Helper(job, report, "calculator-probe", "--pid", app.Id.ToString())
+                : Helper(job, report, "uia", "--pid", app.Id.ToString(), "--set", "NameBox=FullSession",
                     "--invoke", "GreetButton,IncrementButton,IncrementButton");
             report["uia"] = uia;
-            var after = Helper(job, "capture", "--pid", app.Id.ToString(), "--out", job.Output, "--label", "2-after");
+            var after = Helper(job, report, "capture", "--pid", app.Id.ToString(), "--out", job.Output, "--label", "2-after");
             report["after"] = after;
             if (new[] { before, uia, after }.Any(result => result.ExitCode != 0))
                 throw new InvalidOperationException("One or more helper operations failed; see recorded output");
@@ -507,7 +506,7 @@ internal static class Program
                     }, diagnostics, CancellationToken.None).GetAwaiter().GetResult();
                     stream = new HelperResult(observed.ExitCode, observed.Stdout, observed.Stderr);
                 }
-                else stream = Helper(job, "stream", "--pid", app.Id.ToString(), "--out", job.Output);
+                else stream = Helper(job, report, "stream", "--pid", app.Id.ToString(), "--out", job.Output);
                 report["stream"] = stream;
                 if (stream.ExitCode != 0) throw new InvalidOperationException("Bounded screenshot stream failed");
             }
