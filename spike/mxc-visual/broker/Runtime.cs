@@ -10,7 +10,8 @@ internal static class Runtime
     {
         if (request.Operation == "run-grid")
         {
-            var results = RunGroup(request.Members!.Select(member => member.AsRequest()).ToArray(), config, cancel, new WindowsSessionBackend());
+            var results = RunGroup(request.Members!.Select(member => member.AsRequest()).ToArray(), config, cancel,
+                new WindowsSessionBackend(), request.StartupPacing == "settle-15s" ? 15000 : 0);
             return new { ok = true, results };
         }
         if (Directory.Exists(Paths.JobDirectory(request.Id!))) return Result(request.Id!);
@@ -25,8 +26,10 @@ internal static class Runtime
         public Dictionary<string, object?> Report { get; } = new() { ["id"] = request.Id, ["created"] = false, ["started"] = DateTimeOffset.UtcNow };
     }
 
-    internal static object[] RunGroup(Request[] requests, Configuration config, CancellationToken cancel, ISessionBackend backend)
+    internal static object[] RunGroup(Request[] requests, Configuration config, CancellationToken cancel, ISessionBackend backend,
+        int creationDelayMs = 0)
     {
+        if (creationDelayMs is not (0 or 15000)) throw new ArgumentOutOfRangeException(nameof(creationDelayMs));
         backend.CheckPlatform();
         if (requests.Length is < 1 or > VisualWorkloads.MaxSessions) throw new InvalidDataException("Unsupported group size");
         if (requests.Any(request => backend.JournalExists(request.Id!)))
@@ -73,6 +76,19 @@ internal static class Runtime
                 work.Report["sessionId"] = sessionId;
                 work.Report["outputKey"] = work.Lease.OutputKey;
                 work.Report["variant"] = request.Variant ?? "baseline";
+                work.Report["createdAt"] = backend.Now;
+                work.Report["creationPacingMs"] = creationDelayMs;
+                if (creationDelayMs > 0 && work != group[^1])
+                {
+                    work.Report["creationSettleStartedAt"] = backend.Now;
+                    for (int remaining = creationDelayMs; remaining > 0; remaining -= 250)
+                    {
+                        cancel.ThrowIfCancellationRequested();
+                        backend.Delay(Math.Min(250, remaining));
+                    }
+                    cancel.ThrowIfCancellationRequested();
+                    work.Report["creationSettleFinishedAt"] = backend.Now;
+                }
             }
             cancel.ThrowIfCancellationRequested();
             var active = backend.Sessions();

@@ -71,6 +71,7 @@ export function requireDeprovisionReceipt(record) {
 }
 
 const evidenceFiles = [
+  'app-startup.jsonl', 'failure-diagnostics.json', 'startup-hang.dmp',
   'startup.png', 'startup.json',
   'worker.json', 'worker-started.json', 'job.json', 'authorization.json', 'fixture-settings.json', 'stream.json', 'live.json',
   'capture-ready.json', 'capture-started.json',
@@ -78,6 +79,16 @@ const evidenceFiles = [
   ...Array.from({ length: 30 }, (_, i) => `frame-meta-${String(i).padStart(3, '0')}.json`),
   ...['1-before', '2-after'].flatMap(label => ['screen', 'window-bitblt', 'printwindow-0', 'printwindow-2'].map(method => `${label}-${method}.png`)),
 ];
+function fileHash(file) {
+  const hash = createHash('sha256');
+  const buffer = Buffer.alloc(1024 * 1024);
+  const handle = fs.openSync(file, 'r');
+  try {
+    let bytes;
+    while ((bytes = fs.readSync(handle, buffer, 0, buffer.length, null)) !== 0) hash.update(buffer.subarray(0, bytes));
+    return hash.digest('hex');
+  } finally { fs.closeSync(handle); }
+}
 export function copyEvidence(workspace, key, destination) {
   requireId(key);
   const source = path.join(workspace, `broker-${key}`);
@@ -89,12 +100,21 @@ export function copyEvidence(workspace, key, destination) {
     const file = path.join(source, name);
     if (!fs.existsSync(file)) continue;
     const stat = fs.lstatSync(file);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 16 * 1024 * 1024) throw new Error('Unexpected worker evidence file');
+    const maximumBytes = (name === 'startup-hang.dmp' ? 1024 : 16) * 1024 * 1024;
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > maximumBytes) throw new Error('Unexpected worker evidence file');
+    if (name === 'startup-hang.dmp') {
+      const handle = fs.openSync(file, 'r');
+      try {
+        const signature = Buffer.alloc(4);
+        if (fs.readSync(handle, signature, 0, 4, 0) !== 4 || signature.toString('ascii') !== 'MDMP')
+          throw new Error('Invalid owned-app dump signature');
+      } finally { fs.closeSync(handle); }
+    }
     const target = path.join(destination, name);
     if (fs.existsSync(target)) {
       const prior = fs.lstatSync(target);
       if (!prior.isFile() || prior.isSymbolicLink() || prior.size !== stat.size
-        || createHash('sha256').update(fs.readFileSync(file)).digest('hex') !== createHash('sha256').update(fs.readFileSync(target)).digest('hex'))
+        || fileHash(file) !== fileHash(target))
         throw new Error('Existing evidence differs; refusing to overwrite it');
     } else fs.copyFileSync(file, target, fs.constants.COPYFILE_EXCL);
     copied++;

@@ -520,7 +520,21 @@ internal static class Program
                 if (barrier.ReadByte() != 'G') throw new InvalidDataException("Invalid baseline completion signal");
             }
         }
-        catch (Exception error) { report["error"] = error.ToString(); }
+        catch (Exception error)
+        {
+            report["error"] = error.ToString();
+            if (app is not null && VisualWorkloads.IsSampleCalculator(job.Variant)
+                && !report.ContainsKey("streamDiagnostics") && !app.HasExited)
+            {
+                try
+                {
+                    var dump = Helper(job, report, "dump-app", "--pid", app.Id.ToString(), "--out", job.Output);
+                    report["failureDump"] = dump;
+                    File.WriteAllText(Path.Combine(job.Output, "failure-diagnostics.json"), JsonSerializer.Serialize(report, JsonOptions));
+                }
+                catch (Exception dumpError) { report["dumpError"] = dumpError.ToString(); }
+            }
+        }
         finally
         {
             if (app is not null)

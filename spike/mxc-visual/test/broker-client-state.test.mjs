@@ -74,6 +74,21 @@ test('missing output is explicit, never a successful visual verdict', t => {
   const root = temporary(t);
   assert.equal(copyEvidence(root, id, path.join(root, 'out')).copied, false);
 });
+test('startup log and fixed local dump are retained, but arbitrary or malformed dump files are not', t => {
+  const root = temporary(t), workspace = path.join(root, 'shared'), source = path.join(workspace, `broker-${id}`);
+  fs.mkdirSync(source, { recursive: true });
+  fs.writeFileSync(path.join(source, 'app-startup.jsonl'), '{"phase":"window.theme.begin"}\n');
+  fs.writeFileSync(path.join(source, 'startup-hang.dmp'), Buffer.from('MDMPsynthetic'));
+  fs.writeFileSync(path.join(source, 'arbitrary.dmp'), 'must not copy');
+  const destination = path.join(root, 'evidence');
+  assert.equal(copyEvidence(workspace, id, destination).files, 2);
+  assert.equal(copyEvidence(workspace, id, destination).files, 2, 'resume verifies diagnostic hashes without loading entire dumps');
+  assert.deepEqual(fs.readdirSync(destination).sort(), ['app-startup.jsonl', 'startup-hang.dmp']);
+  fs.writeFileSync(path.join(destination, 'startup-hang.dmp'), Buffer.from('MDMPdifferent'));
+  assert.throws(() => copyEvidence(workspace, id, destination), /differs/);
+  fs.writeFileSync(path.join(source, 'startup-hang.dmp'), 'not a dump');
+  assert.throws(() => copyEvidence(workspace, id, path.join(root, 'bad')), /dump signature/);
+});
 test('capture assertions bind the user, session, denied agent IPC and changed images', t => {
   const root = temporary(t);
   const worker = {

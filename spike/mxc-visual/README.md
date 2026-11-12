@@ -594,6 +594,91 @@ are demonstrated by this ramp, not statistically qualified as reliable;
 startup pacing and per-user background initialization remain investigation
 targets rather than established root causes or permission to raise timeouts.
 
+#### Instrumented startup/pacing comparison
+
+The sample now writes flushed `app-startup.jsonl` records directly into its
+collected evidence directory. Entries bracket XAML initialization, DPI lookup,
+the initial resize, theme assignment, calculator creation, scaled resize,
+window activation and the loaded callback. This preserves startup evidence
+even when the app never paints and its profile is subsequently removed.
+
+On a sample-worker failure **before stream preparation**, the worker attempts
+one local `startup-hang.dmp` before terminating its owned app. A fixed helper
+checks the exact packaged fixture image path, target/caller SID and non-console
+session identity. It never dumps System or an arbitrary executable. The
+diagnostic child has the normal bounded helper deadline; diagnostic failure
+does not convert the original failure to success or prevent cleanup. The dump
+includes app memory and must remain private/local; it is not served by the
+camera server or committed. Only the exact dump basename is copied, with an
+MDMP signature check and a 1-GiB limit. Existing large copies are compared using
+bounded-buffer SHA-256 reads rather than loading whole dumps into Node memory.
+
+Prepared grid JSON can select `"startupPacing": "settle-15s"` for a controlled
+comparison. Omitted or `"immediate"` preserves the baseline. The paced variant
+waits fifteen seconds **between native desktop creations**, not between UIA
+steps; eight members have seven waits. Waits are cancellation-aware and recorded
+with start/end timestamps. All existing worker readiness, twenty-second window
+visibility, capture-quality and process-exit gates remain unchanged. The
+protocol accepts only these two fixed modes, not an arbitrary sleep/command.
+Both variants should use the same installed candidate and workload matrix.
+One comparison is diagnostic evidence, not a statistically established fix.
+
+**Instrumented baseline result (November 12 UTC): slow startup reproduced,
+with eventual recovery.** Candidate
+`9D9908B5BE13C83F8F466B91E4C6EFF724E9FC1B8BD176645A325ADB8D5635F1`
+ran eight sessions with immediate creation pacing and the unchanged workload
+matrix. The second sample (dark, **100%**, not the 125% variant) failed the
+normal startup deadline. Its retained trace establishes this sequence:
+
+| Relative to target process creation | Observed event |
+|---:|---|
+| 0 s | Target process created |
+| ~27.25 s | First managed `App` startup trace |
+| ~32.14 s | App XAML initialized |
+| ~35.80 s | Began constructing MainWindow |
+| ~39.55 s | MainWindow XAML-initialization trace |
+| ~40.29 s | Window activated |
+| ~40.92 s | Loaded callback and settings published |
+| ~45 s | Diagnostic dump snapshot |
+
+The preview helper's twenty-second visible-window search had already failed,
+and its process exceeded the thirty-second execution budget. Its partial JSON
+and phase trace were retained. The app nevertheless completed startup during
+the diagnostic interval. This is evidence of **startup delay**, not a permanent
+constructor deadlock or an inherently broken scaling transform.
+
+The local dump contains 64 threads; the UI thread is in
+`user32!GetMessageW` through WinUI's
+`DirectUI::FrameworkApplication::RunDesktopWindowMessageLoop`. The composition
+thread is waiting for work. The snapshot was taken **after** activation, so it
+does not identify the original startup wait. Some OS symbols were unavailable;
+do not infer a blocking call from nearest export names. A future earlier
+snapshot would be needed to inspect pre-activation loader/runtime waits.
+
+The dump was 748,211,090 bytes, exceeding the initial 512-MiB copy limit.
+Recovery correctly retained that account without attempting deprovision rather
+than discard evidence. The collector was corrected to a one-GiB limit with
+bounded hashing; the private local copy was SHA-256 verified before completing
+the one outstanding, not-yet-attempted deprovision. The failed batch outcome
+was not rewritten as success. All eight original accounts and native sessions
+were subsequently confirmed removed and the broker pending queue emptied.
+
+The independent audit also found a test-user `nvcontainer.exe` crash in
+`Downloader.dll` (`0xc0000005`) during desktop startup, before the second app
+was launched. This is a separate NVIDIA user-process failure, not proof of a
+graphics-driver or sample-app root cause. One original profile and its companion
+remained loaded after teardown; the companion total rose from 226 to 234.
+Minimum sampled free memory was 23.957 GiB and maximum host committed memory
+50.457 GiB. No host reboot occurred.
+
+The paced comparison was prepared but **not run** because the recorded
+post-control cleanup gate found the loaded profile pair. The operator was
+unavailable for the decision to continue on that documented state. No profiles,
+handles or services were forcibly changed. The fifteen-second pacing mode has
+offline protocol/cancellation coverage, but **no native benefit is claimed**.
+The installed binaries are identical to the baseline candidate; only the
+host-side dump-copy bound was corrected afterward.
+
 The Windows Calculator workload activates
 `Microsoft.WindowsCalculator_8wekyb3d8bbwe!App` (the app launched by `calc.exe`)
 **as the owned agent**, never as System. The app must be installed and available

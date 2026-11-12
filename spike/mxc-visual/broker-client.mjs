@@ -26,6 +26,8 @@ if (!['status', 'run-fixture', 'run-grid', 'recover'].includes(operation)
   || options.explicit && (operation !== 'run-fixture' || !variant))
   throw new Error('Expected status, recover, run-grid <prepared-directory>, or run-fixture [light|dark|dark-large] [live-output-directory] [--policy <JSON-file>]');
 const preparedBatch = operation === 'run-grid' ? readBatch(gridOutput) : null;
+const startupPacing = preparedBatch?.startupPacing ?? 'immediate';
+if (!['immediate', 'settle-15s'].includes(startupPacing)) throw new Error('Unsupported saved startup pacing');
 const policy = preparedBatch
   ? capturePolicy(Object.hasOwn(preparedBatch, 'capturePolicy') ? preparedBatch.capturePolicy : LEGACY_CAPTURE_POLICY) : options.policy;
 const install = path.join(process.env.ProgramW6432 ?? process.env.ProgramFiles, 'SandboxMcpFullBroker');
@@ -149,6 +151,8 @@ async function runGrid(root, status) {
   const variants = batchVariants(preparedBatch);
   if (status.maxCoordinatedSessions < variants.length || variants.some(variant => !status.variants?.includes(variant)))
     throw new Error('Update the installed broker before provisioning a coordinated grid');
+  if (startupPacing !== 'immediate' && !status.startupPacing?.includes(startupPacing))
+    throw new Error('Installed broker does not support the requested startup pacing');
   for (const variant of variants) requireFreshLiveOutput(path.join(root, variant));
   const records = [], collectors = [], progress = [];
   let response, failure;
@@ -170,7 +174,7 @@ async function runGrid(root, status) {
       }
       collectors.push(startLiveCollector(record.metadata.ephemeralWorkspacePath, path.join(root, variant), { variant, id: record.id }));
     }
-    response = await callLive({ operation: 'run-grid', members: records.map(record => ({
+    response = await callLive({ operation: 'run-grid', ...(startupPacing === 'immediate' ? {} : { startupPacing }), members: records.map(record => ({
       id: record.id, agentName: record.metadata.agentUserName, agentSid: record.metadata.agentUserSid,
       containerId: record.containerId, variant: record.variant,
     })) });

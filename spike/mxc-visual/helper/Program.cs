@@ -30,6 +30,13 @@ static class Program
         };
         try
         {
+            if (args.FirstOrDefault() == "dump-app")
+            {
+                Trace("dump.owned-app");
+                OwnedAppDump.Capture(int.Parse(opts["pid"]), opts["out"], report);
+                Console.WriteLine(JsonSerializer.Serialize(report));
+                return 0;
+            }
             Trace("diagnostics.display");
             report["screen"] = $"{GetSystemMetrics(0)}x{GetSystemMetrics(1)}";
             report["virtualScreen"] = $"{GetSystemMetrics(78)}x{GetSystemMetrics(79)}";

@@ -7,7 +7,8 @@ using System.Text.RegularExpressions;
 namespace SandboxMcp.FullBroker;
 
 internal sealed record Request(int Protocol, string Operation, string? Id = null, string? AgentName = null,
-    string? AgentSid = null, string? ContainerId = null, string? Variant = null, GridMember[]? Members = null);
+    string? AgentSid = null, string? ContainerId = null, string? Variant = null, GridMember[]? Members = null,
+    string? StartupPacing = null);
 internal sealed record GridMember(string Id, string AgentName, string AgentSid, string ContainerId, string Variant)
 {
     public Request AsRequest() => new(1, "run-fixture", Id, AgentName, AgentSid, ContainerId, Variant);
@@ -45,13 +46,15 @@ internal static class Protocol
             "status" or "recover" => ["protocol", "operation"],
             "result" or "ack" => ["protocol", "operation", "id"],
             "run-fixture" => ["protocol", "operation", "id", "agentName", "agentSid", "containerId", "variant"],
-            "run-grid" => ["protocol", "operation", "members"],
+            "run-grid" => ["protocol", "operation", "members", "startupPacing"],
             _ => throw new InvalidDataException("Unsupported operation")
         };
         if (properties.Any(property => !allowed.Contains(property, StringComparer.Ordinal)))
             throw new InvalidDataException("Unexpected operation field");
         if (request.Operation == "run-grid")
         {
+            if (request.StartupPacing is not (null or "immediate" or "settle-15s"))
+                throw new InvalidDataException("Unsupported fixed startup pacing");
             if (request.Members is not { Length: >= 1 and <= VisualWorkloads.MaxSessions })
                 throw new InvalidDataException("Grid requires one to sixteen fixed workloads");
             foreach (var member in request.Members)

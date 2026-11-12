@@ -37,6 +37,23 @@ internal static class CalculatorReadinessTests
             catch (UnauthorizedAccessException) { if (calls == 1) return; }
             throw new Exception("Authorization error was retried or suppressed");
         });
+        Check("dump policy refuses other users, sessions, System and arbitrary executables", () =>
+        {
+            const string sid = "S-1-5-21-1-2-3-1001", image = @"C:\fixed\fixture\HelloWinUI.exe";
+            OwnedAppDump.RequireTarget(sid, sid, 10, 10, 1, image, image);
+            foreach (var target in new[] {
+                (Sid: "S-1-5-18", Caller: sid, Session: 10, Helper: 10, Console: 1u, Image: image),
+                (Sid: sid, Caller: "S-1-5-18", Session: 10, Helper: 10, Console: 1u, Image: image),
+                (Sid: sid, Caller: sid, Session: 11, Helper: 10, Console: 1u, Image: image),
+                (Sid: sid, Caller: sid, Session: 10, Helper: 10, Console: 10u, Image: image),
+                (Sid: sid, Caller: sid, Session: 10, Helper: 10, Console: 1u, Image: @"C:\Windows\explorer.exe") })
+            {
+                bool refused = false;
+                try { OwnedAppDump.RequireTarget(target.Sid, target.Caller, target.Session, target.Helper, target.Console, target.Image, image); }
+                catch (UnauthorizedAccessException) { refused = true; }
+                if (!refused) throw new Exception("Unsafe dump target accepted");
+            }
+        });
         Console.WriteLine(JsonSerializer.Serialize(new { passed, failures, nativeLifecycleInvoked = false }));
         return failures.Count == 0 ? 0 : 1;
     }

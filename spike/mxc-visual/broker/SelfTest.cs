@@ -82,6 +82,12 @@ internal static class SelfTest
             new GridMember(index.ToString("x32"), $"A{index}-B{index}", $"S-1-5-21-1-2-3-{1001 + index}", $"opaque-{index}", variant)).ToArray();
         Check("exactly three coordinated variants accepted", () =>
             Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "run-grid", Members: members), Protocol.Json)));
+        Check("fixed startup pacing accepted but arbitrary delays refused", () =>
+        {
+            Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "run-grid", Members: members, StartupPacing: "settle-15s"), Protocol.Json));
+            Reject(() => Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "run-grid", Members: members, StartupPacing: "sleep forever"), Protocol.Json)));
+            Reject(() => Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(members[0].AsRequest() with { StartupPacing = "settle-15s" }, Protocol.Json)));
+        });
         Check("unbounded grid rejected", () => Reject(() =>
             Protocol.Parse(JsonSerializer.SerializeToUtf8Bytes(new Request(1, "run-grid", Members: [.. members, members[0]]), Protocol.Json))));
         Check("duplicate agent identity rejected", () => Reject(() =>

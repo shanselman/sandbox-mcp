@@ -31,6 +31,7 @@ public partial class App : Application
 
     private static void LogStartup(string message)
     {
+        StartupTrace.Write(message);
         try
         {
             var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

@@ -166,7 +166,8 @@ internal static class Server
     {
         var compatibility = Platform.Inspect();
         return new { ok = true, protocol = 1, ready = recoveryError is null && compatibility.Ready,
-            recoveryError, compatibility, variants = VisualWorkloads.Variants, maxCoordinatedSessions = VisualWorkloads.MaxSessions, pending = Runtime.Summaries() };
+            recoveryError, compatibility, variants = VisualWorkloads.Variants, maxCoordinatedSessions = VisualWorkloads.MaxSessions,
+            startupPacing = new[] { "immediate", "settle-15s" }, pending = Runtime.Summaries() };
     }
     private static async Task MonitorDisconnect(Stream pipe, CancellationTokenSource run, CancellationToken stop)
     {

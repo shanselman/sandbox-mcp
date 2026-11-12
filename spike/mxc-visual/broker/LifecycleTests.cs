@@ -23,6 +23,24 @@ internal static class LifecycleTests
 
     public static void Register(Action<string, Action> check)
     {
+        check("fixed creation pacing occurs only between sessions before any worker", () =>
+        {
+            var backend = new Fake();
+            var results = Runtime.RunGroup(Requests, Config, CancellationToken.None, backend, 15000)
+                .Select(value => JsonSerializer.SerializeToElement(value, Protocol.Json)).ToArray();
+            Assert(backend.DelayedMs == 30000, "Expected two fifteen-second gaps, not a trailing delay");
+            Assert(results.All(result => result.GetProperty("report").GetProperty("success").GetBoolean()), "Paced workers failed");
+            Assert(results[1].GetProperty("report").GetProperty("createdAt").GetDateTimeOffset()
+                - results[0].GetProperty("report").GetProperty("createdAt").GetDateTimeOffset() == TimeSpan.FromSeconds(15), "Wrong pacing interval");
+            Assert(backend.Prepared.SequenceEqual([10, 11, 12]) && backend.Owners.Count == 0, "Warm-up/cleanup changed");
+        });
+        check("cancellation during creation settling stops further creation and cleans the owned session", () =>
+        {
+            using var cancel = new CancellationTokenSource();
+            var backend = new Fake { AfterDelay = () => cancel.Cancel() };
+            Runtime.RunGroup(Requests, Config, cancel.Token, backend, 15000);
+            Assert(backend.Creates == 1 && backend.Workers.IsEmpty && backend.Owners.Count == 0, "Pacing cancellation leaked or continued");
+        });
         check("offline lifecycle: all sessions exist before workers; credentials disposed; exact cleanup", () =>
         {
             var backend = new Fake();
@@ -273,6 +291,7 @@ internal static class LifecycleTests
         public int? ReturnId;
         public bool CreateBeforeThrow, RetainStopped, PlatformFailure;
         public Action<int>? AfterCreate;
+        public Action? AfterDelay;
         public Func<Lease, int, bool>? SaveFailure;
         public Func<int, Request, Native.Ownership, Native.Ownership>? Classifier;
         private int saves;
@@ -342,6 +361,6 @@ internal static class LifecycleTests
             if (id == StopFailure) throw new IOException("Synthetic stop failure");
             if (!RetainStopped) Owners.Remove(id);
         }
-        public void Delay(int milliseconds) { DelayedMs += milliseconds; Now = Now.AddMilliseconds(milliseconds); }
+        public void Delay(int milliseconds) { DelayedMs += milliseconds; Now = Now.AddMilliseconds(milliseconds); AfterDelay?.Invoke(); }
     }
 }
