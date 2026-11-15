@@ -8,11 +8,14 @@ $ErrorActionPreference = 'Stop'
 if ($Arm) {
     # Subcategory GUIDs, because the names are localized: Process Creation, Filtering Platform Connection.
     auditpol.exe /set /subcategory:"{0CCE922B-69AE-11D9-BED3-505054503030}" /success:enable | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Process-creation auditing unavailable: auditpol.exe exited with code $LASTEXITCODE" }
     auditpol.exe /set /subcategory:"{0CCE9226-69AE-11D9-BED3-505054503030}" /success:enable /failure:enable | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Connection auditing unavailable: auditpol.exe exited with code $LASTEXITCODE" }
     $k = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System\Audit'
     New-Item -Path $k -Force | Out-Null
     Set-ItemProperty -Path $k -Name ProcessCreationIncludeCmdLine_Enabled -Value 1 -Type DWord
     wevtutil.exe sl Microsoft-Windows-DNS-Client/Operational /e:true /q:true
+    if ($LASTEXITCODE -ne 0) { throw "DNS auditing unavailable: wevtutil.exe exited with code $LASTEXITCODE" }
     Start-Sleep -Milliseconds 500
     (Get-Date).ToString('o')
     return
@@ -25,7 +28,11 @@ function EventData($e) {
     $d
 }
 function Events($filter) {
-    try { @(Get-WinEvent -FilterHashtable $filter -MaxEvents $MaxEvents -ErrorAction Stop) } catch { @() }
+    try { @(Get-WinEvent -FilterHashtable $filter -MaxEvents $MaxEvents -ErrorAction Stop) }
+    catch {
+        if ($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound,*') { return @() }
+        throw "Event collection unavailable for $($filter.LogName) (IDs $($filter.Id -join ', ')): $($_.Exception.Message)"
+    }
 }
 function Num([string]$s) { if ($s -match '^0x') { [Convert]::ToInt64($s.Substring(2), 16) } elseif ($s) { [int64]$s } else { 0 } }
 
