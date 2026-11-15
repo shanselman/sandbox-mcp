@@ -1,6 +1,86 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import path from 'node:path';
+import { ROOT as REPO_ROOT } from '../../src/core.js';
 import { detonateCommand, processTree, findings, network, headline, detonateSummary, renderDetonateReport } from '../../src/detonate.js';
+
+const watch = path.join(REPO_ROOT, 'agent', 'watch.ps1').replace(/'/g, "''");
+const ps = (script) => execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
+  { encoding: 'utf8', timeout: 30_000 });
+
+test('audit setup stops on either auditpol or DNS setup failure instead of returning an armed timestamp', () => {
+  // Mock every setup side effect: this test never changes host audit policy, registry or logs.
+  const output = ps(`
+    function auditpol.exe {
+      $global:calls++
+      $global:LASTEXITCODE = if ($global:calls -eq $global:failAt) { 5 } else { 0 }
+    }
+    function wevtutil.exe {
+      $global:calls++
+      $global:LASTEXITCODE = if ($global:calls -eq $global:failAt) { 5 } else { 0 }
+    }
+    function New-Item {}
+    function Set-ItemProperty {}
+    function Start-Sleep {}
+    $results = foreach ($failAt in 1, 2, 3, 0) {
+      $global:failAt = $failAt; $global:calls = 0
+      $value = $null; $failure = $null
+      try { $value = & '${watch}' -Arm } catch { $failure = $_.Exception.Message }
+      [pscustomobject]@{ failAt=$failAt; calls=$global:calls; value=$value; error=$failure }
+    }
+    ConvertTo-Json -InputObject @($results) -Compress
+  `);
+  const results = JSON.parse(output);
+  for (const [i, pattern] of [/Process-creation auditing unavailable/, /Connection auditing unavailable/, /DNS auditing unavailable/].entries()) {
+    assert.equal(results[i].calls, i + 1, 'setup must stop at the failing command');
+    assert.equal(results[i].value, null, 'failed setup must not return the collection start time');
+    assert.match(results[i].error, pattern);
+    assert.match(results[i].error, /exited with code 5/);
+  }
+  assert.equal(results[3].error, null);
+  assert.equal(results[3].calls, 3);
+  assert.match(results[3].value, /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test('event collection distinguishes no matching events from failures in each log query', () => {
+  const output = ps(`
+    function Get-WinEvent {
+      [CmdletBinding()] param($FilterHashtable, $MaxEvents)
+      $global:queries++
+      $id = if ($global:queries -eq $global:failAt) { $global:failureId } else { 'NoMatchingEventsFound' }
+      $record = [Management.Automation.ErrorRecord]::new(
+        [InvalidOperationException]::new('Synthetic event query result'), $id,
+        [Management.Automation.ErrorCategory]::ObjectNotFound, $FilterHashtable.LogName)
+      $PSCmdlet.ThrowTerminatingError($record)
+    }
+    function Get-Process { [pscustomobject]@{ Id=1234 } }
+    $results = foreach ($case in @(
+      @{ failAt=0; id='none' },
+      @{ failAt=1; id='UnauthorizedAccess' },
+      @{ failAt=2; id='EventLogUnavailable' },
+      @{ failAt=3; id='NoMatchingLogsFound' }
+    )) {
+      $global:queries=0; $global:failAt=$case.failAt; $global:failureId=$case.id
+      $value=$null; $failure=$null
+      try { $value = & '${watch}' -Since '2026-01-01T00:00:00Z' } catch { $failure=$_.Exception.Message }
+      [pscustomobject]@{ failAt=$case.failAt; queries=$global:queries; value=$value; error=$failure }
+    }
+    ConvertTo-Json -InputObject @($results) -Compress
+  `);
+  const results = JSON.parse(output);
+  assert.equal(results[0].error, null);
+  const empty = JSON.parse(results[0].value);
+  for (const key of ['processes', 'connections', 'dns']) assert.deepEqual(empty[key], []);
+  assert.deepEqual(empty.alive, [1234]);
+  for (const [i, ids] of ['4688', '5156, 5157', '3006, 3008'].entries()) {
+    assert.equal(results[i + 1].queries, i + 1);
+    assert.equal(results[i + 1].value, null, 'failed collection must not emit an empty activity report');
+    assert.match(results[i + 1].error, /Event collection unavailable/);
+    assert.ok(results[i + 1].error.includes(`IDs ${ids}`));
+  }
+  assert.match(results[3].error, /Microsoft-Windows-DNS-Client\/Operational/);
+});
 
 test('detonateCommand runs scripts with their default host and installers silently', () => {
   assert.deepEqual(detonateCommand('C:\\d\\a.js'), { file: 'wscript.exe', args: '"C:\\d\\a.js"' });
@@ -105,4 +185,16 @@ test('headline, summary and report read sensibly for results and errors', () => 
   const e = { file: 'x.ps1', error: 'boom\nmore', findings: [], shots: [], windows: [], crashes: [], seconds: 1, tree: [] };
   assert.equal(headline(e), 'ERROR  x.ps1: boom');
   assert.match(renderDetonateReport({ ...e, outDir: 'C:\\out' }), /## Error/);
+});
+
+test('unavailable event collection is rendered as an error, never a nothing-notable verdict', () => {
+  const result = {
+    file: 'sample.exe', error: 'collecting events failed: Event collection unavailable for Security (IDs 4688)',
+    findings: [], shots: [], windows: [], crashes: [], seconds: 1, outDir: 'C:\\out',
+  };
+  assert.match(headline(result), /^ERROR.*Event collection unavailable/);
+  const report = renderDetonateReport(result);
+  assert.match(report, /## Error/);
+  assert.match(report, /Event collection unavailable for Security/);
+  assert.doesNotMatch(report, /nothing notable/);
 });

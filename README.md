@@ -694,6 +694,9 @@ screenshots, and "everything else that happened" (usually Windows itself, kept s
   `.hta` (with `mshta`), from the user's Downloads folder.
 - **Watching:** up to `--duration` seconds (60), stopping early once everything it started has exited, unless
   `--full`. A screenshot every `--every` seconds (15).
+- **Collection health:** if process/connection audit setup or DNS log setup fails, the file is not launched.
+  If an event log cannot be read, the run reports a collection error rather than treating it as no activity.
+  A successful query with no matching events still produces an empty activity list.
 - **Findings are heuristics, not a verdict.** Installers add autoruns and services too. Exit code 0 means "it was
   observed", not "it's safe". This is a quick first look on your own PC, not a malware lab: something that checks
   whether it's in a sandbox can just behave nicely.
